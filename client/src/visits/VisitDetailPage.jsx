@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { Download, Loader2, MessageCircle } from 'lucide-react';
-import { http } from '../api/http.js';
+import { apiPath, http } from '../api/http.js';
 import { StatusBadge } from '../components/StatusBadge.jsx';
 
 export function VisitDetailPage() {
@@ -102,7 +102,7 @@ export function VisitDetailPage() {
       {!loading && (error || payload?.message) && <p className="rounded-lg bg-blue-50 p-3 text-sm text-interpath-blue ring-1 ring-blue-100">{payload?.message || error}</p>}
       {!loading && (payload?.pdfGenerated || payload) && (
         <section className="panel grid gap-2 sm:flex sm:flex-wrap">
-          <a className="btn-primary w-full sm:w-auto" href={`/api/results/${encodeURIComponent(labNumber)}/pdf?download=1`} target="_blank" rel="noreferrer">
+          <a className="btn-primary w-full sm:w-auto" href={apiPath(`/api/results/${encodeURIComponent(labNumber)}/pdf?download=1`)} target="_blank" rel="noreferrer">
             <Download size={16} />
             Download PDF
           </a>
