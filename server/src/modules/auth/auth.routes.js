@@ -9,6 +9,21 @@ export const authRouter = Router();
 
 const userTypes = ['Patient', 'Clinic_Doctor', 'Employee'];
 
+function cookieOptions() {
+  const secure = process.env.COOKIE_SECURE
+    ? process.env.COOKIE_SECURE === 'true'
+    : process.env.NODE_ENV !== 'development';
+  const sameSite = process.env.COOKIE_SAME_SITE || (secure ? 'none' : 'lax');
+
+  return {
+    httpOnly: true,
+    signed: true,
+    secure,
+    sameSite,
+    maxAge: 24 * 60 * 60 * 1000
+  };
+}
+
 authRouter.post('/login', async (req, res, next) => {
   try {
     const body = z.object({
@@ -37,13 +52,7 @@ authRouter.post('/login', async (req, res, next) => {
       createdAt: Date.now()
     };
 
-    res.cookie('interpath_session', session, {
-      httpOnly: true,
-      signed: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
-      maxAge: 24 * 60 * 60 * 1000
-    });
+    res.cookie('interpath_session', session, cookieOptions());
 
     req.user = session;
     await writeAudit(req, 'LOGIN');
