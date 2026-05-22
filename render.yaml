@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: interpath-results-api
+    env: node
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+
+  - type: web
+    name: interpath-results-pwa
+    env: static
+    rootDir: client
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
