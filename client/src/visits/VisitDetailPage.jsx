@@ -46,7 +46,8 @@ export function VisitDetailPage() {
   const resultCount = payload?.results?.filter((row) => hasResultValue(row)).length || 0;
 
   async function shareWhatsApp() {
-    const phone = sharePhone || displayVisit?.PhoneNumber || '';
+    const phone = normalizeZimbabwePhone(sharePhone || displayVisit?.PhoneNumber || '');
+    setSharePhone(phone);
     const { data } = await http.post(`/results/${labNumber}/share-whatsapp`, { phoneNumber: phone });
     const pdfLink = data.shareUrl;
     const text = `Good day ${displayVisit?.PatientName || 'Patient'}, your Interpath lab results for visit ${labNumber} are now available. Please find your result report here: ${pdfLink}. Kindly consult your doctor for interpretation of the results.`;
@@ -113,7 +114,7 @@ export function VisitDetailPage() {
             </a>
           )}
           <button className="btn-secondary w-full sm:w-auto" onClick={() => {
-            setSharePhone(displayVisit?.PhoneNumber || '');
+            setSharePhone(normalizeZimbabwePhone(displayVisit?.PhoneNumber || ''));
             setShareOpen(true);
           }} disabled={!payload?.pdfGenerated}>
             <MessageCircle size={16} />
@@ -140,6 +141,7 @@ export function VisitDetailPage() {
             <p className="mt-2 text-sm text-slate-600">Only a secure PDF link will be shared. Raw medical result values will not be included in the WhatsApp message.</p>
             <label className="mt-4 block text-sm font-normal">Patient phone number</label>
             <input className="field mt-1" value={sharePhone} onChange={(event) => setSharePhone(event.target.value)} />
+            <p className="mt-2 text-xs text-slate-500">Zimbabwe numbers are sent to WhatsApp in +263 format.</p>
             <div className="mt-4 grid gap-2 sm:flex sm:justify-end">
               <button className="btn-secondary" onClick={() => setShareOpen(false)}>Cancel</button>
               <button className="btn-primary" onClick={shareWhatsApp}>Open WhatsApp</button>
@@ -304,4 +306,13 @@ function flagClass(flag) {
   return abnormal
     ? 'rounded-full bg-red-50 px-2 py-1 text-xs font-normal text-interpath-red ring-1 ring-red-100'
     : 'text-slate-600';
+}
+
+function normalizeZimbabwePhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('263')) return `+${digits}`;
+  if (digits.startsWith('0')) return `+263${digits.slice(1)}`;
+  if (digits.startsWith('7')) return `+263${digits}`;
+  return `+${digits}`;
 }

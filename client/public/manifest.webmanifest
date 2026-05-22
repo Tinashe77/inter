@@ -1,11 +1,18 @@
 {
   "name": "Interpath Results",
   "short_name": "Interpath",
+  "id": "/",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#F7F8FC",
   "theme_color": "#2E3092",
   "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
     {
       "src": "/interpathmed_logo.png",
       "sizes": "1087x969",

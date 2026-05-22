@@ -3,6 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { ClipboardList, FileBarChart, Home, KeyRound, LogOut, Truck } from 'lucide-react';
 import { useAuthStore } from '../auth/authStore.js';
 import { BrandLogo } from '../components/BrandLogo.jsx';
+import { InstallAppButton } from '../components/InstallAppButton.jsx';
 import { LoadingScreen } from '../components/LoadingScreen.jsx';
 
 const navItems = [
@@ -42,9 +43,12 @@ export function AppLayout() {
               <p className="truncate text-xs font-normal text-slate-500">{user.usertype}</p>
             </div>
           </div>
-          <button className="btn-secondary shrink-0 px-3" onClick={logout} aria-label="Logout">
-            <LogOut size={16} />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <InstallAppButton compact />
+            <button className="btn-secondary px-3" onClick={logout} aria-label="Logout">
+              <LogOut size={16} />
+            </button>
+          </div>
         </div>
       </header>
       <div className="mx-auto grid max-w-7xl gap-4 px-3 pb-28 pt-3 sm:px-4 sm:pt-4 md:grid-cols-[220px_1fr] md:pb-8">
