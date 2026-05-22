@@ -19,8 +19,8 @@ export function AppLayout() {
   const { user, loading, loadUser, logout } = useAuthStore();
 
   useEffect(() => {
-    loadUser();
-  }, [loadUser]);
+    if (!user) loadUser();
+  }, [loadUser, user]);
 
   useEffect(() => {
     if (!loading && !user) navigate('/login');

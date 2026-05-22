@@ -1,5 +1,5 @@
-const CACHE_NAME = 'interpath-results-v2';
-const APP_SHELL = ['/', '/manifest.webmanifest', '/interpathmed_logo.png'];
+const CACHE_NAME = 'interpath-results-v3';
+const APP_SHELL = ['/', '/manifest.webmanifest', '/interpathmed_logo.png', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
