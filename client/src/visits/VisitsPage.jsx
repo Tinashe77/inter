@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CalendarDays, RefreshCw, Search } from 'lucide-react';
+import { RefreshCw, Search } from 'lucide-react';
 import { http } from '../api/http.js';
 import { useAuthStore } from '../auth/authStore.js';
 import { StatusBadge } from '../components/StatusBadge.jsx';
@@ -69,20 +69,17 @@ export function VisitsPage() {
           </p>
         </div>
         {user.usertype === 'Employee' && (
-          <label className="relative w-full lg:w-56">
-            <CalendarDays className="pointer-events-none absolute left-4 top-3.5 text-slate-400" size={17} />
-            <input className="field pl-11" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+          <label className="w-full lg:w-56">
+            <input className="field" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
           </label>
         )}
         {user.usertype === 'Clinic_Doctor' && (
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto">
-            <label className="relative">
-              <CalendarDays className="pointer-events-none absolute left-4 top-3.5 text-slate-400" size={17} />
-              <input className="field pl-11" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
+            <label>
+              <input className="field" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} />
             </label>
-            <label className="relative">
-              <CalendarDays className="pointer-events-none absolute left-4 top-3.5 text-slate-400" size={17} />
-              <input className="field pl-11" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            <label>
+              <input className="field" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
             </label>
           </div>
         )}
