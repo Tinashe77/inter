@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Download, Share2, X } from 'lucide-react';
 
 function isStandalone() {
@@ -9,14 +9,20 @@ function isIos() {
   return /iphone|ipad|ipod/i.test(window.navigator.userAgent || '');
 }
 
+function isSafari() {
+  const userAgent = window.navigator.userAgent || '';
+  return /safari/i.test(userAgent) && !/crios|fxios|chrome|android/i.test(userAgent);
+}
+
 export function InstallAppButton({ compact = false }) {
   const [installEvent, setInstallEvent] = useState(null);
   const [installed, setInstalled] = useState(false);
   const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const canShowHelp = useMemo(() => typeof window !== 'undefined' && !installed, [installed]);
+  const [iosSafari, setIosSafari] = useState(false);
 
   useEffect(() => {
     setInstalled(isStandalone());
+    setIosSafari(isIos() && isSafari());
 
     function handleBeforeInstallPrompt(event) {
       event.preventDefault();
@@ -36,7 +42,7 @@ export function InstallAppButton({ compact = false }) {
     };
   }, []);
 
-  if (installed || !canShowHelp) return null;
+  if (installed || (!installEvent && !iosSafari)) return null;
 
   async function installApp() {
     if (installEvent) {
@@ -46,7 +52,7 @@ export function InstallAppButton({ compact = false }) {
       setInstallEvent(null);
       return;
     }
-    setInstructionsOpen(true);
+    if (iosSafari) setInstructionsOpen(true);
   }
 
   return (
@@ -70,7 +76,7 @@ export function InstallAppButton({ compact = false }) {
             <ol className="mt-4 space-y-3 text-sm text-slate-700">
               <li className="flex gap-3">
                 <span className="icon-bubble h-9 w-9"><Share2 size={16} /></span>
-                <span>{isIos() ? 'Tap the Safari share button.' : 'Open your browser menu.'}</span>
+                <span>Tap the Safari share button.</span>
               </li>
               <li className="flex gap-3">
                 <span className="icon-bubble h-9 w-9"><Download size={16} /></span>
