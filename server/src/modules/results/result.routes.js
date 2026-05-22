@@ -179,31 +179,35 @@ function resolveSlisPdfUrl(pdfUrl) {
   return resolvedUrl.toString();
 }
 
+async function getGeneratedEmployeePdfUrl(labNumber, token) {
+  const response = await axios.get(`${process.env.SLIS_BASE_URL}/api/Main/${encodeURIComponent(labNumber)}`, {
+    responseType: 'json',
+    params: { format: 'pdf' },
+    headers: {
+      Accept: 'application/json,text/plain,*/*',
+      Authorization: `Bearer ${token}`,
+      format: 'pdf',
+      'User-Agent': 'Mozilla/5.0 InterpathResultsPWA/1.0'
+    }
+  });
+
+  const pdfUrl = response.data?.PDF || response.data?.Pdf || response.data?.pdf;
+  if (!pdfUrl) {
+    const message = response.data?.Message || response.data?.response || response.data?.PatientName || 'SLIS did not generate a PDF URL for this visit.';
+    const error = new Error(message);
+    error.status = 502;
+    error.code = 'PDF_NOT_AVAILABLE';
+    throw error;
+  }
+
+  return resolveSlisPdfUrl(pdfUrl);
+}
+
 resultRouter.get('/:labNumber/pdf', requireAuth(['Patient', 'Clinic_Doctor', 'Employee']), async (req, res, next) => {
   try {
     const labNumber = req.params.labNumber;
     if (req.user.usertype === 'Employee') {
-      const response = await axios.get(`${process.env.SLIS_BASE_URL}/api/Main/${encodeURIComponent(labNumber)}`, {
-        responseType: 'json',
-        params: { format: 'pdf' },
-        headers: {
-          Accept: 'application/json,text/plain,*/*',
-          Authorization: `Bearer ${req.user.token}`,
-          format: 'pdf',
-          'User-Agent': 'Mozilla/5.0 InterpathResultsPWA/1.0'
-        }
-      });
-
-      const pdfUrl = response.data?.PDF || response.data?.Pdf || response.data?.pdf;
-      if (!pdfUrl) {
-        const message = response.data?.Message || response.data?.response || response.data?.PatientName || 'SLIS did not generate a PDF URL for this visit.';
-        const error = new Error(message);
-        error.status = 502;
-        error.code = 'PDF_NOT_AVAILABLE';
-        throw error;
-      }
-
-      const absolutePdfUrl = resolveSlisPdfUrl(pdfUrl);
+      const absolutePdfUrl = await getGeneratedEmployeePdfUrl(labNumber, req.user.token);
       const pdfResponse = await axios.get(absolutePdfUrl, {
         responseType: 'stream',
         headers: {
@@ -256,9 +260,14 @@ resultRouter.post('/:labNumber/share-whatsapp', requireAuth(['Patient', 'Clinic_
   try {
     const labNumber = req.params.labNumber;
     const token = crypto.randomBytes(32).toString('hex');
+    const pdfUrl = req.user.usertype === 'Employee'
+      ? await getGeneratedEmployeePdfUrl(labNumber, req.user.token)
+      : buildPdfUrl(labNumber);
+
     await ShareLink.create({
       token,
       labNumber,
+      pdfUrl,
       createdBy: req.user.id,
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
     });
@@ -276,7 +285,7 @@ resultRouter.get('/share/:token/pdf', async (req, res, next) => {
       return res.status(404).json({ code: 'SHARE_LINK_EXPIRED', message: 'This result link has expired or is no longer available.' });
     }
 
-    const pdfUrl = buildPdfUrl(shareLink.labNumber);
+    const pdfUrl = shareLink.pdfUrl || buildPdfUrl(shareLink.labNumber);
     const response = await axios.get(pdfUrl, { responseType: 'stream' });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${shareLink.labNumber}_Test_Results.pdf"`);
