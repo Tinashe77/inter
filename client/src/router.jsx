@@ -11,6 +11,7 @@ import { VisitsPage } from './visits/VisitsPage.jsx';
 import { VisitDetailPage } from './visits/VisitDetailPage.jsx';
 import { ReportsPage } from './reports/ReportsPage.jsx';
 import { SampleCollectionPage } from './sampleCollection/SampleCollectionPage.jsx';
+import { ApiTesterPage } from './apiTester/ApiTesterPage.jsx';
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
       { path: 'visits', element: <VisitsPage /> },
       { path: 'visits/:labNumber', element: <VisitDetailPage /> },
       { path: 'reports', element: <ReportsPage /> },
+      { path: 'api-tester', element: <ApiTesterPage /> },
       { path: 'sample-collection', element: <SampleCollectionPage /> },
       { path: 'change-password', element: <ChangePasswordPage /> }
     ]

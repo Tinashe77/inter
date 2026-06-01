@@ -14,6 +14,7 @@ import { visitRouter } from './modules/visits/visit.routes.js';
 import { resultRouter } from './modules/results/result.routes.js';
 import { reportRouter } from './modules/reports/report.routes.js';
 import { sampleRouter } from './modules/sampleCollection/sample.routes.js';
+import { apiTesterRouter } from './modules/apiTester/apiTester.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -45,6 +46,7 @@ app.use('/api/visits', visitRouter);
 app.use('/api/results', resultRouter);
 app.use('/api/reports', reportRouter);
 app.use('/api/sample-collection', sampleRouter);
+app.use('/api/tester', apiTesterRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'interpath-results-api' });
