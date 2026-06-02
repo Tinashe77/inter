@@ -6,7 +6,7 @@ const auditSchema = new mongoose.Schema({
   actorRole: String,
   action: {
     type: String,
-    enum: ['LOGIN', 'RESULT_VIEW', 'PDF_DOWNLOAD', 'WHATSAPP_SHARE', 'REPORT_EXPORT', 'SAMPLE_COLLECTION'],
+    enum: ['LOGIN', 'RESULT_VIEW', 'PDF_DOWNLOAD', 'WHATSAPP_SHARE', 'RESULT_SHARE_LINK', 'REPORT_EXPORT', 'SAMPLE_COLLECTION'],
     required: true
   },
   labNumber: String,

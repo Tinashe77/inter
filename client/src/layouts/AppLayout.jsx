@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
-import { ClipboardList, FileBarChart, FlaskConical, Home, KeyRound, LogOut, Truck } from 'lucide-react';
+import { Building2, ClipboardList, FileBarChart, FlaskConical, Home, KeyRound, LogOut, Truck } from 'lucide-react';
 import { useAuthStore } from '../auth/authStore.js';
 import { BrandLogo } from '../components/BrandLogo.jsx';
 import { InstallAppButton } from '../components/InstallAppButton.jsx';
@@ -11,6 +11,7 @@ const navItems = [
   { to: '/visits', label: 'Visits', icon: ClipboardList },
   { to: '/sample-collection', label: 'Samples', icon: Truck, roles: ['Clinic_Doctor'] },
   { to: '/reports', label: 'Reports', icon: FileBarChart, roles: ['Employee'] },
+  { to: '/clinics', label: 'Clinics', icon: Building2, roles: ['Employee'] },
   { to: '/api-tester', label: 'Tester', icon: FlaskConical, roles: ['Employee'] },
   { to: '/change-password', label: 'Password', icon: KeyRound, roles: ['Patient', 'Clinic_Doctor'] }
 ];

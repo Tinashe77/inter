@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { Download, Loader2, MessageCircle } from 'lucide-react';
+import { Download, Loader2, Mail, MessageCircle } from 'lucide-react';
 import { apiPath, http } from '../api/http.js';
 import { StatusBadge } from '../components/StatusBadge.jsx';
 
@@ -12,7 +12,9 @@ export function VisitDetailPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [shareOpen, setShareOpen] = useState(false);
-  const [sharePhone, setSharePhone] = useState('');
+  const [shareLoading, setShareLoading] = useState(false);
+  const [shareError, setShareError] = useState('');
+  const [shareDraft, setShareDraft] = useState(() => createEmptyShareDraft());
   const [covidMessage, setCovidMessage] = useState('');
 
   useEffect(() => {
@@ -45,14 +47,80 @@ export function VisitDetailPage() {
   const grouped = useMemo(() => groupResults(payload?.results || []), [payload]);
   const resultCount = payload?.results?.filter((row) => hasResultValue(row)).length || 0;
 
-  async function shareWhatsApp() {
-    const phone = normalizeZimbabwePhone(sharePhone || displayVisit?.PhoneNumber || '');
-    setSharePhone(phone);
-    const { data } = await http.post(`/results/${labNumber}/share-whatsapp`, { phoneNumber: phone });
-    const pdfLink = data.shareUrl;
-    const text = `Good day ${displayVisit?.PatientName || 'Patient'}, your Interpath lab results for visit ${labNumber} are now available. Please find your result report here: ${pdfLink}. Kindly consult your doctor for interpretation of the results.`;
-    setShareOpen(false);
-    window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+  async function openShareDialog(channel) {
+    setShareOpen(true);
+    setShareLoading(true);
+    setShareError('');
+    setShareDraft(createEmptyShareDraft(channel));
+
+    try {
+      const clinicName = String(displayVisit?.Clinic || '').trim();
+      const { data } = await http.get('/clinics');
+      const clinics = data.clinics || [];
+      const clinic = findClinicByName(clinics, clinicName);
+      const nextDraft = {
+        ...createEmptyShareDraft(channel),
+        clinicName,
+        matchedClinic: clinic,
+        doctorName: clinic?.Doctor || displayVisit?.Doctor || '',
+        phone: normalizeZimbabwePhone(clinic?.phone || ''),
+        email: clinic?.email || '',
+        isEditing: !clinic
+      };
+
+      setShareDraft(nextDraft);
+      if (!clinic) {
+        setShareError(`No clinic match was found for "${clinicName || 'this visit'}". Please enter the doctor's details.`);
+      }
+    } catch (err) {
+      setShareDraft((current) => ({
+        ...current,
+        clinicName: String(displayVisit?.Clinic || '').trim(),
+        doctorName: displayVisit?.Doctor || '',
+        isEditing: true
+      }));
+      setShareError(err.message);
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function completeShare() {
+    setShareError('');
+    const doctorName = shareDraft.doctorName.trim();
+    const phone = normalizeZimbabwePhone(shareDraft.phone);
+    const email = shareDraft.email.trim();
+
+    if (shareDraft.channel === 'whatsapp' && !phone) {
+      setShareError('Enter the doctor phone number before sharing.');
+      return;
+    }
+    if (shareDraft.channel === 'email' && !email) {
+      setShareError('Enter the doctor email address before sharing.');
+      return;
+    }
+
+    try {
+      setShareLoading(true);
+      const { data } = await http.post(`/results/${labNumber}/share-link`, { channel: shareDraft.channel });
+      const pdfLink = data.shareUrl;
+      const greeting = doctorName ? `Good day ${doctorName}` : 'Good day Doctor';
+      const text = `${greeting}, ${displayVisit?.PatientName || 'the patient'}'s Interpath lab results for visit ${labNumber} are now available. Please find the result report here: ${pdfLink}.`;
+
+      setShareOpen(false);
+      setShareLoading(false);
+
+      if (shareDraft.channel === 'whatsapp') {
+        window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
+      const subject = `Interpath lab results for ${displayVisit?.PatientName || labNumber}`;
+      window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+    } catch (err) {
+      setShareError(err.message);
+      setShareLoading(false);
+    }
   }
 
   async function requestCovidCertificate() {
@@ -113,12 +181,13 @@ export function VisitDetailPage() {
               Preview PDF
             </a>
           )}
-          <button className="btn-secondary w-full sm:w-auto" onClick={() => {
-            setSharePhone(normalizeZimbabwePhone(displayVisit?.PhoneNumber || ''));
-            setShareOpen(true);
-          }} disabled={!payload?.pdfGenerated}>
+          <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('whatsapp')} disabled={!payload?.pdfGenerated}>
             <MessageCircle size={16} />
             Share via WhatsApp
+          </button>
+          <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('email')} disabled={!payload?.pdfGenerated}>
+            <Mail size={16} />
+            Share via Email
           </button>
           <button className="btn-secondary w-full sm:w-auto" onClick={requestCovidCertificate}>Covid Certificate</button>
         </section>
@@ -136,15 +205,52 @@ export function VisitDetailPage() {
       {covidMessage && <p className="rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">{covidMessage}</p>}
       {shareOpen && (
         <section className="fixed inset-0 z-30 flex items-end justify-center bg-slate-950/50 px-3 pb-3 sm:items-center sm:px-4 sm:pb-0">
-          <div className="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-            <h3 className="text-lg font-normal">Confirm sharing</h3>
-            <p className="mt-2 text-sm text-slate-600">Only a secure PDF link will be shared. Raw medical result values will not be included in the WhatsApp message.</p>
-            <label className="mt-4 block text-sm font-normal">Patient phone number</label>
-            <input className="field mt-1" value={sharePhone} onChange={(event) => setSharePhone(event.target.value)} />
-            <p className="mt-2 text-xs text-slate-500">Zimbabwe numbers are sent to WhatsApp in +263 format.</p>
+          <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
+            <h3 className="text-lg font-normal">{shareDraft.channel === 'email' ? 'Confirm email sharing' : 'Confirm WhatsApp sharing'}</h3>
+            <p className="mt-2 text-sm text-slate-600">The system matched the visit clinic against the SLIS clinic list using the visit Clinic value and clinic ClinicName.</p>
+            {shareLoading && (
+              <p className="mt-4 flex items-center gap-2 rounded-lg bg-blue-50 p-3 text-sm text-interpath-blue">
+                <Loader2 className="animate-spin" size={16} />
+                Preparing doctor details...
+              </p>
+            )}
+            {shareError && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-interpath-red">{shareError}</p>}
+            <div className="mt-4 grid gap-3 rounded-lg bg-slate-50 p-3 text-sm sm:grid-cols-2">
+              <Detail label="Visit clinic" value={shareDraft.clinicName} />
+              <Detail label="Matched clinic" value={shareDraft.matchedClinic?.ClinicName} />
+              <Detail label="Doctor" value={shareDraft.doctorName} />
+              <Detail label={shareDraft.channel === 'email' ? 'Doctor email' : 'Doctor phone'} value={shareDraft.channel === 'email' ? shareDraft.email : shareDraft.phone} />
+            </div>
+            {!shareLoading && !shareDraft.isEditing && (
+              <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-slate-700">
+                Are these doctor details correct?
+              </div>
+            )}
+            {!shareLoading && shareDraft.isEditing && (
+              <div className="mt-4 grid gap-3">
+                <label className="block text-sm font-normal">
+                  Doctor name
+                  <input className="field mt-1" value={shareDraft.doctorName} onChange={(event) => setShareDraft((current) => ({ ...current, doctorName: event.target.value }))} />
+                </label>
+                {shareDraft.channel === 'email' ? (
+                  <label className="block text-sm font-normal">
+                    Doctor email
+                    <input className="field mt-1" type="email" value={shareDraft.email} onChange={(event) => setShareDraft((current) => ({ ...current, email: event.target.value }))} />
+                  </label>
+                ) : (
+                  <label className="block text-sm font-normal">
+                    Doctor phone number
+                    <input className="field mt-1" value={shareDraft.phone} onChange={(event) => setShareDraft((current) => ({ ...current, phone: event.target.value }))} />
+                  </label>
+                )}
+              </div>
+            )}
             <div className="mt-4 grid gap-2 sm:flex sm:justify-end">
               <button className="btn-secondary" onClick={() => setShareOpen(false)}>Cancel</button>
-              <button className="btn-primary" onClick={shareWhatsApp}>Open WhatsApp</button>
+              {!shareDraft.isEditing && <button className="btn-secondary" onClick={() => setShareDraft((current) => ({ ...current, isEditing: true }))}>No, edit details</button>}
+              <button className="btn-primary" onClick={completeShare} disabled={shareLoading}>
+                {shareDraft.channel === 'email' ? 'Open Email' : 'Open WhatsApp'}
+              </button>
             </div>
           </div>
         </section>
@@ -299,6 +405,34 @@ function isCommentOnly(row) {
 
 function uniqueValues(values) {
   return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
+}
+
+function createEmptyShareDraft(channel = 'whatsapp') {
+  return {
+    channel,
+    clinicName: '',
+    matchedClinic: null,
+    doctorName: '',
+    phone: '',
+    email: '',
+    isEditing: false
+  };
+}
+
+function findClinicByName(clinics, clinicName) {
+  const normalizedClinicName = normalizeLookupValue(clinicName);
+  if (!normalizedClinicName) return null;
+
+  return clinics.find((clinic) => normalizeLookupValue(clinic.ClinicName) === normalizedClinicName)
+    || clinics.find((clinic) => {
+      const normalizedCandidate = normalizeLookupValue(clinic.ClinicName);
+      return normalizedCandidate.includes(normalizedClinicName) || normalizedClinicName.includes(normalizedCandidate);
+    })
+    || null;
+}
+
+function normalizeLookupValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }
 
 function flagClass(flag) {

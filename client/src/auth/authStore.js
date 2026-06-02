@@ -45,6 +45,7 @@ export const useAuthStore = create((set) => ({
       const { data } = await http.get('/auth/me');
       set({ user: data.user, loading: false });
     } catch {
+      clearClientSession();
       set({ user: null, loading: false });
     }
   },

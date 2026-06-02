@@ -30,6 +30,9 @@ export function VisitsPage() {
           ? `/visits?date=${formatSlisDate(to)}&branch=ALL`
           : `/visits?dateFrom=${from}&dateTo=${to}`;
       const { data } = await http.get(endpoint);
+      if (range.logResponse && user.usertype !== 'Patient') {
+        console.log('Visits date range JSON response:', data);
+      }
       setVisits(data.visits || []);
       setMessage(data.message || '');
     } catch (err) {
@@ -83,7 +86,7 @@ export function VisitsPage() {
             </label>
           </div>
         )}
-        <button className="btn-primary w-full lg:w-auto" onClick={loadVisits} disabled={loading}>
+        <button className="btn-primary w-full lg:w-auto" onClick={() => loadVisits({ logResponse: true })} disabled={loading}>
           <RefreshCw className={loading ? 'animate-spin' : ''} size={16} />
           {loading ? 'Loading' : 'Refresh'}
         </button>

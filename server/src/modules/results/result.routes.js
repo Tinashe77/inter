@@ -258,25 +258,44 @@ resultRouter.get('/:labNumber/covid-certificate', requireAuth(['Patient', 'Clini
 
 resultRouter.post('/:labNumber/share-whatsapp', requireAuth(['Patient', 'Clinic_Doctor', 'Employee']), async (req, res, next) => {
   try {
-    const labNumber = req.params.labNumber;
-    const token = crypto.randomBytes(32).toString('hex');
-    const pdfUrl = req.user.usertype === 'Employee'
-      ? await getGeneratedEmployeePdfUrl(labNumber, req.user.token)
-      : buildPdfUrl(labNumber);
-
-    await ShareLink.create({
-      token,
-      labNumber,
-      pdfUrl,
-      createdBy: req.user.id,
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
-    });
+    const { labNumber, shareUrl } = await createResultShareLink(req);
     await writeAudit(req, 'WHATSAPP_SHARE', { labNumber, phoneNumber: req.body?.phoneNumber });
-    res.json({ status: 'ok', shareUrl: `${req.protocol}://${req.get('host')}/api/results/share/${token}/pdf` });
+    res.json({ status: 'ok', shareUrl });
   } catch (error) {
     next(error);
   }
 });
+
+resultRouter.post('/:labNumber/share-link', requireAuth(['Patient', 'Clinic_Doctor', 'Employee']), async (req, res, next) => {
+  try {
+    const { labNumber, shareUrl } = await createResultShareLink(req);
+    await writeAudit(req, 'RESULT_SHARE_LINK', { labNumber, channel: req.body?.channel });
+    res.json({ status: 'ok', shareUrl });
+  } catch (error) {
+    next(error);
+  }
+});
+
+async function createResultShareLink(req) {
+  const labNumber = req.params.labNumber;
+  const token = crypto.randomBytes(32).toString('hex');
+  const pdfUrl = req.user.usertype === 'Employee'
+    ? await getGeneratedEmployeePdfUrl(labNumber, req.user.token)
+    : buildPdfUrl(labNumber);
+
+  await ShareLink.create({
+    token,
+    labNumber,
+    pdfUrl,
+    createdBy: req.user.id,
+    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+  });
+
+  return {
+    labNumber,
+    shareUrl: `${req.protocol}://${req.get('host')}/api/results/share/${token}/pdf`
+  };
+}
 
 resultRouter.get('/share/:token/pdf', async (req, res, next) => {
   try {
