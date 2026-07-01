@@ -64,6 +64,7 @@ export function VisitDetailPage() {
         matchedClinic: clinic,
         doctorName: clinic?.Doctor || displayVisit?.Doctor || '',
         phone: normalizeZimbabwePhone(clinic?.phone || ''),
+        phoneNumbers: [normalizeZimbabwePhone(clinic?.phone || '')],
         email: clinic?.email || '',
         isEditing: !clinic
       };
@@ -88,11 +89,11 @@ export function VisitDetailPage() {
   async function completeShare() {
     setShareError('');
     const doctorName = shareDraft.doctorName.trim();
-    const phone = normalizeZimbabwePhone(shareDraft.phone);
+    const phoneNumbers = uniqueValues(shareDraft.phoneNumbers.map(normalizeZimbabwePhone)).slice(0, 3);
     const email = shareDraft.email.trim();
 
-    if (shareDraft.channel === 'whatsapp' && !phone) {
-      setShareError('Enter the doctor phone number before sharing.');
+    if (shareDraft.channel === 'whatsapp' && phoneNumbers.length === 0) {
+      setShareError('Enter at least one doctor phone number before sharing.');
       return;
     }
     if (shareDraft.channel === 'email' && !email) {
@@ -102,7 +103,7 @@ export function VisitDetailPage() {
 
     try {
       setShareLoading(true);
-      const { data } = await http.post(`/results/${labNumber}/share-link`, { channel: shareDraft.channel });
+      const { data } = await http.post(`/results/${labNumber}/share-link`, { channel: shareDraft.channel, recipientCount: shareDraft.channel === 'whatsapp' ? phoneNumbers.length : 1 });
       const pdfLink = data.shareUrl;
       const greeting = doctorName ? `Good day ${doctorName}` : 'Good day Doctor';
       const text = `${greeting}, ${displayVisit?.PatientName || 'the patient'}'s Interpath lab results for visit ${labNumber} are now available. Please find the result report here: ${pdfLink}.`;
@@ -111,7 +112,9 @@ export function VisitDetailPage() {
       setShareLoading(false);
 
       if (shareDraft.channel === 'whatsapp') {
-        window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+        phoneNumbers.forEach((phone) => {
+          window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
+        });
         return;
       }
 
@@ -121,6 +124,27 @@ export function VisitDetailPage() {
       setShareError(err.message);
       setShareLoading(false);
     }
+  }
+
+  function addSharePhoneNumber() {
+    setShareDraft((current) => {
+      if (current.phoneNumbers.length >= 3) return current;
+      return { ...current, phoneNumbers: [...current.phoneNumbers, ''] };
+    });
+  }
+
+  function removeSharePhoneNumber(index) {
+    setShareDraft((current) => ({
+      ...current,
+      phoneNumbers: current.phoneNumbers.filter((_, phoneIndex) => phoneIndex !== index)
+    }));
+  }
+
+  function updateSharePhoneNumber(index, value) {
+    setShareDraft((current) => ({
+      ...current,
+      phoneNumbers: current.phoneNumbers.map((phone, phoneIndex) => phoneIndex === index ? value : phone)
+    }));
   }
 
   async function requestCovidCertificate() {
@@ -219,7 +243,7 @@ export function VisitDetailPage() {
               <Detail label="Visit clinic" value={shareDraft.clinicName} />
               <Detail label="Matched clinic" value={shareDraft.matchedClinic?.ClinicName} />
               <Detail label="Doctor" value={shareDraft.doctorName} />
-              <Detail label={shareDraft.channel === 'email' ? 'Doctor email' : 'Doctor phone'} value={shareDraft.channel === 'email' ? shareDraft.email : shareDraft.phone} />
+              <Detail label={shareDraft.channel === 'email' ? 'Doctor email' : 'Doctor phones'} value={shareDraft.channel === 'email' ? shareDraft.email : compactPhoneNumbers(shareDraft.phoneNumbers).join(', ')} />
             </div>
             {!shareLoading && !shareDraft.isEditing && (
               <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-slate-700">
@@ -238,10 +262,26 @@ export function VisitDetailPage() {
                     <input className="field mt-1" type="email" value={shareDraft.email} onChange={(event) => setShareDraft((current) => ({ ...current, email: event.target.value }))} />
                   </label>
                 ) : (
-                  <label className="block text-sm font-normal">
-                    Doctor phone number
-                    <input className="field mt-1" value={shareDraft.phone} onChange={(event) => setShareDraft((current) => ({ ...current, phone: event.target.value }))} />
-                  </label>
+                  <div className="grid gap-2">
+                    <p className="text-sm font-normal">Doctor phone numbers</p>
+                    {shareDraft.phoneNumbers.map((phone, index) => (
+                      <div className="grid gap-2 sm:grid-cols-[1fr_auto]" key={index}>
+                        <input
+                          className="field"
+                          value={phone}
+                          onChange={(event) => updateSharePhoneNumber(index, event.target.value)}
+                          placeholder={`Phone number ${index + 1}`}
+                        />
+                        {shareDraft.phoneNumbers.length > 1 && (
+                          <button className="btn-secondary px-3" type="button" onClick={() => removeSharePhoneNumber(index)}>Remove</button>
+                        )}
+                      </div>
+                    ))}
+                    {shareDraft.phoneNumbers.length < 3 && (
+                      <button className="btn-secondary w-full sm:w-auto" type="button" onClick={addSharePhoneNumber}>Add another number</button>
+                    )}
+                    <p className="text-xs text-slate-500">You can send this result to up to 3 WhatsApp numbers.</p>
+                  </div>
                 )}
               </div>
             )}
@@ -414,9 +454,14 @@ function createEmptyShareDraft(channel = 'whatsapp') {
     matchedClinic: null,
     doctorName: '',
     phone: '',
+    phoneNumbers: [''],
     email: '',
     isEditing: false
   };
+}
+
+function compactPhoneNumbers(phoneNumbers = []) {
+  return uniqueValues(phoneNumbers.map(normalizeZimbabwePhone)).slice(0, 3);
 }
 
 function findClinicByName(clinics, clinicName) {
