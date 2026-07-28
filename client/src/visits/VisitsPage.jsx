@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { RefreshCw, Search } from 'lucide-react';
+import { MapPin, RefreshCw, Search } from 'lucide-react';
 import { http } from '../api/http.js';
 import { useAuthStore } from '../auth/authStore.js';
 import { StatusBadge } from '../components/StatusBadge.jsx';
 
 export function VisitsPage() {
   const user = useAuthStore((state) => state.user);
+  const employeeBranch = useAuthStore((state) => state.employeeBranch);
   const [visits, setVisits] = useState([]);
   const [query, setQuery] = useState('');
   const [dateFrom, setDateFrom] = useState(() => defaultDateFrom(user?.usertype));
@@ -27,13 +28,13 @@ export function VisitsPage() {
       const endpoint = user.usertype === 'Patient'
         ? '/visits/mine'
         : user.usertype === 'Employee'
-          ? `/visits?date=${formatSlisDate(to)}&branch=ALL`
+          ? `/visits?date=${formatSlisDate(to)}&branch=${encodeURIComponent(employeeBranch || 'ALL')}`
           : `/visits?dateFrom=${from}&dateTo=${to}`;
       const { data } = await http.get(endpoint);
       if (range.logResponse && user.usertype !== 'Patient') {
         console.log('Visits date range JSON response:', data);
       }
-      setVisits(data.visits || []);
+      setVisits(applyEmployeeBranchFilter(data.visits || [], user.usertype, employeeBranch));
       setMessage(data.message || '');
     } catch (err) {
       setVisits([]);
@@ -54,7 +55,7 @@ export function VisitsPage() {
       return;
     }
     loadVisits();
-  }, [user?.usertype]);
+  }, [employeeBranch, user?.usertype]);
 
   const filtered = useMemo(() => {
     const term = query.toLowerCase();
@@ -68,13 +69,20 @@ export function VisitsPage() {
           <p className="text-sm font-normal text-interpath-blue">{user.usertype === 'Employee' ? 'Daily result list' : 'Laboratory visits'}</p>
           <h2 className="mt-1 text-2xl font-normal leading-tight sm:text-3xl">{user.usertype === 'Employee' ? 'Results by date' : 'Patient visits'}</h2>
           <p className="mt-2 text-sm font-normal text-slate-600">
-            {user.usertype === 'Employee' ? 'Select a date to pull SLIS results for all branches.' : 'Search visits and open result details.'}
+            {user.usertype === 'Employee' ? `Select a date to pull SLIS results for ${employeeBranch || 'ALL'}.` : 'Search visits and open result details.'}
           </p>
         </div>
         {user.usertype === 'Employee' && (
-          <label className="w-full lg:w-56">
-            <input className="field" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
-          </label>
+          <div className="grid w-full gap-2 lg:w-auto lg:grid-cols-[180px_220px]">
+            <label className="field flex min-h-11 items-center gap-2 py-2 text-sm">
+              <MapPin size={16} className="text-interpath-blue" />
+              <span className="truncate">{employeeBranch || 'ALL'}</span>
+              <Link className="ml-auto text-xs text-interpath-blue" to="/branch-selection">Change</Link>
+            </label>
+            <label>
+              <input className="field" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
+            </label>
+          </div>
         )}
         {user.usertype === 'Clinic_Doctor' && (
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto">
@@ -159,4 +167,27 @@ function formatSlisDate(value) {
   if (!match) return value;
   const [, yyyy, mm, dd] = match;
   return `${dd}${mm}${yyyy}`;
+}
+
+function applyEmployeeBranchFilter(visits, usertype, branch) {
+  const selectedBranch = normalizeLookupValue(branch);
+  if (usertype !== 'Employee' || !selectedBranch || selectedBranch === 'all') return visits;
+
+  return visits.filter((visit) => {
+    const values = [
+      visit.Branch,
+      visit.branch,
+      visit.Location,
+      visit.location,
+      visit.Clinic,
+      visit.ClinicName,
+      visit.CollectionPoint
+    ].map(normalizeLookupValue).filter(Boolean);
+
+    return values.some((value) => value === selectedBranch || value.includes(selectedBranch) || selectedBranch.includes(value));
+  });
+}
+
+function normalizeLookupValue(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase();
 }

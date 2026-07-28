@@ -6,6 +6,8 @@ import { buildPdfUrl, slisGet } from '../../services/slisApi.service.js';
 import { writeAudit } from '../audit/audit.service.js';
 import { ShareLink } from './shareLink.model.js';
 import { parseSlisListResponse, assertSlisObjectSuccess } from '../../utils/slisResponse.js';
+import { sendWhatsAppResultTemplate } from '../../services/whatsappCloud.service.js';
+import { WhatsAppMessage } from '../whatsapp/whatsappMessage.model.js';
 
 export const resultRouter = Router();
 
@@ -276,6 +278,51 @@ resultRouter.post('/:labNumber/share-link', requireAuth(['Patient', 'Clinic_Doct
   }
 });
 
+resultRouter.post('/:labNumber/send-whatsapp', requireAuth(['Patient', 'Clinic_Doctor', 'Employee']), async (req, res, next) => {
+  try {
+    const { labNumber, shareUrl } = await createResultShareLink(req);
+    const destination = req.body?.phoneNumber;
+    const patientName = req.body?.patientName || 'the patient';
+    const whatsapp = await sendWhatsAppResultTemplate({
+      to: destination,
+      patientName,
+      labNumber,
+      shareUrl
+    });
+
+    if (whatsapp.messageId) {
+      await WhatsAppMessage.findOneAndUpdate(
+        { metaMessageId: whatsapp.messageId },
+        {
+          $set: {
+            recipientWaId: whatsapp.contactWaId,
+            labNumber,
+            status: 'accepted',
+            statusTimestamp: new Date()
+          }
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    await writeAudit(req, 'WHATSAPP_SHARE', {
+      labNumber,
+      channel: 'meta-cloud-api',
+      phoneNumber: destination,
+      messageId: whatsapp.messageId
+    });
+
+    res.json({
+      status: 'ok',
+      destination,
+      shareUrl,
+      messageId: whatsapp.messageId
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 async function createResultShareLink(req) {
   const labNumber = req.params.labNumber;
   const token = crypto.randomBytes(32).toString('hex');
@@ -293,8 +340,12 @@ async function createResultShareLink(req) {
 
   return {
     labNumber,
-    shareUrl: `${req.protocol}://${req.get('host')}/api/results/share/${token}/pdf`
+    shareUrl: `${getShareBaseUrl(req)}/api/results/share/${token}/pdf`
   };
+}
+
+function getShareBaseUrl(req) {
+  return String(process.env.RESULT_SHARE_BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
 }
 
 resultRouter.get('/share/:token/pdf', async (req, res, next) => {

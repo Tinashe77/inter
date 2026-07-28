@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { http } from '../api/http.js';
 
 const SESSION_KEY = 'interpath_authenticated_session';
+const EMPLOYEE_BRANCH_KEY = 'interpath_employee_branch';
 
 function hasActiveClientSession() {
   try {
@@ -22,14 +23,37 @@ function markClientSession() {
 function clearClientSession() {
   try {
     window.sessionStorage.removeItem(SESSION_KEY);
+    window.sessionStorage.removeItem(EMPLOYEE_BRANCH_KEY);
   } catch {
     // Ignore storage restrictions; server auth still protects the data.
+  }
+}
+
+function getStoredEmployeeBranch() {
+  try {
+    return window.sessionStorage.getItem(EMPLOYEE_BRANCH_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function storeEmployeeBranch(branch) {
+  try {
+    const value = String(branch || '').trim();
+    if (value) {
+      window.sessionStorage.setItem(EMPLOYEE_BRANCH_KEY, value);
+    } else {
+      window.sessionStorage.removeItem(EMPLOYEE_BRANCH_KEY);
+    }
+  } catch {
+    // Ignore storage restrictions; the user can select again during this session.
   }
 }
 
 export const useAuthStore = create((set) => ({
   user: null,
   loading: true,
+  employeeBranch: getStoredEmployeeBranch(),
   async loadUser() {
     if (!hasActiveClientSession()) {
       try {
@@ -37,7 +61,8 @@ export const useAuthStore = create((set) => ({
       } catch {
         // The cookie may already be absent or expired.
       }
-      set({ user: null, loading: false });
+      clearClientSession();
+      set({ user: null, employeeBranch: '', loading: false });
       return;
     }
 
@@ -46,13 +71,19 @@ export const useAuthStore = create((set) => ({
       set({ user: data.user, loading: false });
     } catch {
       clearClientSession();
-      set({ user: null, loading: false });
+      set({ user: null, employeeBranch: '', loading: false });
     }
   },
   async login(payload) {
     const { data } = await http.post('/auth/login', payload);
     markClientSession();
     set({ user: data.user, loading: false });
+    return data.user;
+  },
+  setEmployeeBranch(branch) {
+    const value = String(branch || '').trim();
+    storeEmployeeBranch(value);
+    set({ employeeBranch: value });
   },
   async logout() {
     clearClientSession();
@@ -61,6 +92,6 @@ export const useAuthStore = create((set) => ({
     } catch {
       // Local session must still be cleared even if the network request fails.
     }
-    set({ user: null, loading: false });
+    set({ user: null, employeeBranch: '', loading: false });
   }
 }));

@@ -16,6 +16,7 @@ import { reportRouter } from './modules/reports/report.routes.js';
 import { sampleRouter } from './modules/sampleCollection/sample.routes.js';
 import { apiTesterRouter } from './modules/apiTester/apiTester.routes.js';
 import { clinicRouter } from './modules/clinics/clinic.routes.js';
+import { whatsappRouter } from './modules/whatsapp/whatsapp.routes.js';
 
 const app = express();
 const port = process.env.PORT || 5001;
@@ -46,7 +47,12 @@ function isLocalhostOrigin(origin) {
     return false;
   }
 }
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({
+  limit: '1mb',
+  verify(req, _res, buffer) {
+    req.rawBody = buffer;
+  }
+}));
 app.use(cookieParser(process.env.COOKIE_SECRET));
 app.use(morgan('dev'));
 
@@ -59,6 +65,7 @@ app.use('/api/reports', reportRouter);
 app.use('/api/sample-collection', sampleRouter);
 app.use('/api/tester', apiTesterRouter);
 app.use('/api/clinics', clinicRouter);
+app.use('/api/whatsapp', whatsappRouter);
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', service: 'interpath-results-api' });

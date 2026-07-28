@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { slisPost, slisPut } from '../../services/slisApi.service.js';
 import { createHttpError } from '../../middleware/errorHandler.js';
 import { requireAuth } from '../../middleware/requireAuth.js';
+import { createMobileSessionToken, wantsMobileSession } from '../../services/mobileSession.service.js';
 import { writeAudit } from '../audit/audit.service.js';
 
 export const authRouter = Router();
@@ -57,7 +58,15 @@ authRouter.post('/login', async (req, res, next) => {
     req.user = session;
     await writeAudit(req, 'LOGIN');
 
-    res.json({ user: { id: session.id, usertype: session.usertype, username: session.username, name: session.name } });
+    const response = {
+      user: { id: session.id, usertype: session.usertype, username: session.username, name: session.name }
+    };
+
+    if (wantsMobileSession(req)) {
+      response.sessionToken = createMobileSessionToken(session);
+    }
+
+    res.json(response);
   } catch (error) {
     next(error);
   }

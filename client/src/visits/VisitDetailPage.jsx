@@ -15,6 +15,8 @@ export function VisitDetailPage() {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState('');
   const [shareDraft, setShareDraft] = useState(() => createEmptyShareDraft());
+  const [gupshupLoading, setGupshupLoading] = useState(false);
+  const [gupshupMessage, setGupshupMessage] = useState('');
   const [covidMessage, setCovidMessage] = useState('');
 
   useEffect(() => {
@@ -43,7 +45,7 @@ export function VisitDetailPage() {
 
   const patientDetails = payload?.metadata?.patientDetails || {};
   const credentials = payload?.metadata?.credentials?.[0] || {};
-  const displayVisit = { ...(visit || {}), ...patientDetails };
+  const displayVisit = mergeNonEmpty(visit || {}, patientDetails);
   const grouped = useMemo(() => groupResults(payload?.results || []), [payload]);
   const resultCount = payload?.results?.filter((row) => hasResultValue(row)).length || 0;
 
@@ -147,6 +149,21 @@ export function VisitDetailPage() {
     }));
   }
 
+  async function sendViaGupshup() {
+    setGupshupLoading(true);
+    setGupshupMessage('');
+    try {
+      const { data } = await http.post(`/results/${labNumber}/send-gupshup-whatsapp`, {
+        patientName: displayVisit?.PatientName || ''
+      });
+      setGupshupMessage(`Gupshup request accepted for +${data.destination}.`);
+    } catch (err) {
+      setGupshupMessage(err.message);
+    } finally {
+      setGupshupLoading(false);
+    }
+  }
+
   async function requestCovidCertificate() {
     try {
       const { data } = await http.get(`/results/${labNumber}/covid-certificate`);
@@ -209,6 +226,10 @@ export function VisitDetailPage() {
             <MessageCircle size={16} />
             Share via WhatsApp
           </button>
+          <button className="btn-secondary w-full sm:w-auto" onClick={sendViaGupshup} disabled={!payload?.pdfGenerated || gupshupLoading}>
+            <MessageCircle size={16} />
+            {gupshupLoading ? 'Sending...' : 'Send via Gupshup'}
+          </button>
           <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('email')} disabled={!payload?.pdfGenerated}>
             <Mail size={16} />
             Share via Email
@@ -227,6 +248,7 @@ export function VisitDetailPage() {
         </section>
       )}
       {covidMessage && <p className="rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">{covidMessage}</p>}
+      {gupshupMessage && <p className="rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">{gupshupMessage}</p>}
       {shareOpen && (
         <section className="fixed inset-0 z-30 flex items-end justify-center bg-slate-950/50 px-3 pb-3 sm:items-center sm:px-4 sm:pb-0">
           <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
@@ -445,6 +467,15 @@ function isCommentOnly(row) {
 
 function uniqueValues(values) {
   return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
+}
+
+function mergeNonEmpty(base, overlay) {
+  return Object.entries(overlay || {}).reduce((acc, [key, value]) => {
+    if (String(value ?? '').trim()) {
+      acc[key] = value;
+    }
+    return acc;
+  }, { ...(base || {}) });
 }
 
 function createEmptyShareDraft(channel = 'whatsapp') {

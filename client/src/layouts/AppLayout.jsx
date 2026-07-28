@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Building2, ClipboardList, FileBarChart, FlaskConical, Home, KeyRound, LogOut, Truck } from 'lucide-react';
 import { useAuthStore } from '../auth/authStore.js';
 import { BrandLogo } from '../components/BrandLogo.jsx';
@@ -18,7 +18,8 @@ const navItems = [
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const { user, loading, loadUser, logout } = useAuthStore();
+  const location = useLocation();
+  const { user, loading, loadUser, logout, employeeBranch } = useAuthStore();
 
   useEffect(() => {
     if (!user) loadUser();
@@ -27,6 +28,12 @@ export function AppLayout() {
   useEffect(() => {
     if (!loading && !user) navigate('/login');
   }, [loading, navigate, user]);
+
+  useEffect(() => {
+    if (!loading && user?.usertype === 'Employee' && !employeeBranch && location.pathname !== '/branch-selection') {
+      navigate('/branch-selection');
+    }
+  }, [employeeBranch, loading, location.pathname, navigate, user?.usertype]);
 
   if (loading || !user) {
     return <LoadingScreen />;

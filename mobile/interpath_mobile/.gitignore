@@ -1,0 +1,25 @@
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Desktop and web targets are not part of this mobile release.
+macos/
+linux/
+windows/
+web/
+
+# Local environment
+.env
+*.keystore
+*.jks
+*.p8
+*.p12
+*.mobileprovision
