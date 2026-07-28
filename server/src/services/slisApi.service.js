@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const slis = axios.create({
   baseURL: process.env.SLIS_BASE_URL,
-  timeout: 30000,
+  timeout: 60000,
   headers: {
     Accept: 'application/json,text/plain,*/*',
     'User-Agent': 'Mozilla/5.0 InterpathResultsPWA/1.0'
@@ -11,7 +11,7 @@ const slis = axios.create({
 
 const slisReports = axios.create({
   baseURL: process.env.SLIS_REPORTS_BASE_URL || process.env.SLIS_BASE_URL,
-  timeout: 30000,
+  timeout: 60000,
   headers: {
     Accept: 'application/json,text/plain,*/*',
     'User-Agent': 'Mozilla/5.0 InterpathResultsPWA/1.0'

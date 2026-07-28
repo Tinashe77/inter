@@ -1,8 +1,9 @@
 import { createHttpError } from './errorHandler.js';
+import { verifyMobileSessionToken } from '../services/mobileSession.service.js';
 
 export function requireAuth(roles = []) {
   return (req, _res, next) => {
-    const session = req.signedCookies?.interpath_session;
+    const session = req.signedCookies?.interpath_session || getBearerSession(req);
     if (!session?.token) {
       return next(createHttpError(401, 'AUTH_REQUIRED', 'Please sign in to continue.'));
     }
@@ -19,4 +20,14 @@ export function requireAuth(roles = []) {
     req.user = session;
     next();
   };
+}
+
+function getBearerSession(req) {
+  const authorization = String(req.get('Authorization') || '');
+  const match = /^Bearer\s+(.+)$/i.exec(authorization);
+  if (!match) {
+    return null;
+  }
+
+  return verifyMobileSessionToken(match[1]);
 }

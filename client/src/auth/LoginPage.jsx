@@ -24,8 +24,8 @@ export function LoginPage() {
   async function onSubmit(values) {
     setError('');
     try {
-      await login(values);
-      navigate('/');
+      const user = await login(values);
+      navigate(user?.usertype === 'Employee' ? '/branch-selection' : '/');
     } catch (err) {
       setError(err.message);
     }

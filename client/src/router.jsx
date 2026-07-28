@@ -14,6 +14,7 @@ import { SampleCollectionPage } from './sampleCollection/SampleCollectionPage.js
 import { ApiTesterPage } from './apiTester/ApiTesterPage.jsx';
 import { ClinicsPage } from './clinics/ClinicsPage.jsx';
 import { ClinicDetailPage } from './clinics/ClinicDetailPage.jsx';
+import { BranchSelectionPage } from './branches/BranchSelectionPage.jsx';
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +31,7 @@ export const router = createBrowserRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <DashboardPage /> },
+      { path: 'branch-selection', element: <BranchSelectionPage /> },
       { path: 'visits', element: <VisitsPage /> },
       { path: 'visits/:labNumber', element: <VisitDetailPage /> },
       { path: 'reports', element: <ReportsPage /> },
