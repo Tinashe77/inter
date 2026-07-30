@@ -76,29 +76,52 @@ export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, s
 function toWhatsAppError(cause) {
   const metaError = cause.response?.data?.error || {};
   const metaCode = Number(metaError.code || 0);
-  const error = new Error(whatsAppErrorMessage(metaCode));
+  const metaSubcode = Number(metaError.error_subcode || 0);
+  const error = new Error(whatsAppErrorMessage(metaCode, metaSubcode));
   error.status = cause.code === 'ECONNABORTED' ? 504 : 502;
   error.code = 'WHATSAPP_SEND_FAILED';
   error.details = {
     provider: 'Meta WhatsApp Cloud API',
     metaCode: metaCode || undefined,
-    metaSubcode: metaError.error_subcode || undefined,
+    metaSubcode: metaSubcode || undefined,
     requestId: metaError.fbtrace_id || undefined
   };
+  console.error('Meta WhatsApp send failed', error.details);
   return error;
 }
 
-function whatsAppErrorMessage(metaCode) {
+function whatsAppErrorMessage(metaCode, metaSubcode) {
+  const reference = metaCode
+    ? ` (Meta ${metaCode}${metaSubcode ? `/${metaSubcode}` : ''})`
+    : '';
   if (metaCode === 190) {
-    return 'WhatsApp authentication failed. The administrator must refresh the Meta access token.';
+    return `WhatsApp authentication failed. The administrator must refresh the Meta access token.${reference}`;
+  }
+  if (metaCode === 131030) {
+    return `This phone number is not currently permitted as a WhatsApp test recipient.${reference}`;
+  }
+  if ([131031, 131042].includes(metaCode)) {
+    return `The WhatsApp Business account cannot send messages right now. Check its account and billing status.${reference}`;
+  }
+  if ([130429, 131048, 131049].includes(metaCode)) {
+    return `WhatsApp has temporarily limited message delivery. Please retry later.${reference}`;
+  }
+  if (metaCode === 132000) {
+    return `The approved WhatsApp template does not have the three body variables expected by the app.${reference}`;
   }
   if (metaCode === 132001) {
-    return 'The WhatsApp message template is unavailable or has not been approved yet.';
+    return `The configured WhatsApp template name or language does not match an approved template.${reference}`;
+  }
+  if (metaCode === 132012) {
+    return `A WhatsApp template variable has the wrong format.${reference}`;
+  }
+  if ([132015, 132016].includes(metaCode)) {
+    return `The WhatsApp template is paused or disabled in Meta Business Manager.${reference}`;
   }
   if ([131026, 131047].includes(metaCode)) {
-    return 'WhatsApp could not deliver this message to the doctor’s number.';
+    return `WhatsApp could not deliver this message to the doctor’s number.${reference}`;
   }
-  return 'WhatsApp could not send the result. Please retry or contact an administrator.';
+  return `WhatsApp could not send the result. Please retry or contact an administrator.${reference}`;
 }
 
 function normalizePhone(value) {
