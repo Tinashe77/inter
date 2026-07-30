@@ -8,6 +8,9 @@ class Visit {
     this.clinic,
     this.paymentMode,
     this.phoneNumber,
+    this.doctor,
+    this.doctorPhoneNumber,
+    this.canSendToDoctor = false,
   });
 
   final String labNumber;
@@ -18,6 +21,19 @@ class Visit {
   final String? clinic;
   final String? paymentMode;
   final String? phoneNumber;
+  final String? doctor;
+  final String? doctorPhoneNumber;
+  final bool canSendToDoctor;
+
+  bool get isCompleted {
+    final value = status.trim().toLowerCase();
+    return value.contains('complete') ||
+        value.contains('authorised') ||
+        value.contains('authorized') ||
+        value.contains('reported') ||
+        value.contains('result ready') ||
+        value == 'final';
+  }
 
   factory Visit.fromJson(Map<String, dynamic> json) {
     return Visit(
@@ -29,6 +45,9 @@ class Visit {
       clinic: json['Clinic']?.toString(),
       paymentMode: json['PaymentMode']?.toString(),
       phoneNumber: json['PhoneNumber']?.toString(),
+      doctor: json['Doctor']?.toString(),
+      doctorPhoneNumber: json['DoctorPhoneNumber']?.toString(),
+      canSendToDoctor: json['CanSendToDoctor'] == true,
     );
   }
 }

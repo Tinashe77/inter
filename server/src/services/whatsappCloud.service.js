@@ -32,40 +32,73 @@ export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, s
     throw error;
   }
 
-  const response = await axios.post(
-    `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`,
-    {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: destination,
-      type: 'template',
-      template: {
-        name: config.templateName,
-        language: { code: config.templateLanguage },
-        components: [{
-          type: 'body',
-          parameters: [
-            { type: 'text', text: patientName || 'Patient' },
-            { type: 'text', text: labNumber },
-            { type: 'text', text: shareUrl }
-          ]
-        }]
-      }
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${config.accessToken}`,
-        'Content-Type': 'application/json'
+  let response;
+  try {
+    response = await axios.post(
+      `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: destination,
+        type: 'template',
+        template: {
+          name: config.templateName,
+          language: { code: config.templateLanguage },
+          components: [{
+            type: 'body',
+            parameters: [
+              { type: 'text', text: patientName || 'Patient' },
+              { type: 'text', text: labNumber },
+              { type: 'text', text: shareUrl }
+            ]
+          }]
+        }
       },
-      timeout: 30000
-    }
-  );
+      {
+        headers: {
+          Authorization: `Bearer ${config.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+  } catch (cause) {
+    throw toWhatsAppError(cause);
+  }
 
   return {
     messageId: response.data?.messages?.[0]?.id || null,
     contactWaId: response.data?.contacts?.[0]?.wa_id || destination,
     response: response.data
   };
+}
+
+function toWhatsAppError(cause) {
+  const metaError = cause.response?.data?.error || {};
+  const metaCode = Number(metaError.code || 0);
+  const error = new Error(whatsAppErrorMessage(metaCode));
+  error.status = cause.code === 'ECONNABORTED' ? 504 : 502;
+  error.code = 'WHATSAPP_SEND_FAILED';
+  error.details = {
+    provider: 'Meta WhatsApp Cloud API',
+    metaCode: metaCode || undefined,
+    metaSubcode: metaError.error_subcode || undefined,
+    requestId: metaError.fbtrace_id || undefined
+  };
+  return error;
+}
+
+function whatsAppErrorMessage(metaCode) {
+  if (metaCode === 190) {
+    return 'WhatsApp authentication failed. The administrator must refresh the Meta access token.';
+  }
+  if (metaCode === 132001) {
+    return 'The WhatsApp message template is unavailable or has not been approved yet.';
+  }
+  if ([131026, 131047].includes(metaCode)) {
+    return 'WhatsApp could not deliver this message to the doctor’s number.';
+  }
+  return 'WhatsApp could not send the result. Please retry or contact an administrator.';
 }
 
 function normalizePhone(value) {

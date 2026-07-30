@@ -4,6 +4,7 @@ import { requireAuth } from '../../middleware/requireAuth.js';
 import { slisGet } from '../../services/slisApi.service.js';
 import { normalizeDateForSlis } from '../../utils/formatters.js';
 import { parseSlisListResponse } from '../../utils/slisResponse.js';
+import { getClinicDirectory, resolveDoctorRecipient } from '../../services/clinicDirectory.service.js';
 
 export const visitRouter = Router();
 
@@ -42,7 +43,12 @@ visitRouter.get('/', requireAuth(['Clinic_Doctor', 'Employee']), async (req, res
         return;
       }
       const parsed = parseSlisListResponse(rows);
-      res.json({ message: parsed.message || (parsed.rows.length ? null : 'No records were found for the selected date.'), visits: normalizeListVisits(parsed.rows) });
+      const visits = normalizeListVisits(parsed.rows);
+      const clinics = await getClinicDirectory(req.user.token).catch(() => []);
+      res.json({
+        message: parsed.message || (parsed.rows.length ? null : 'No records were found for the selected date.'),
+        visits: visits.map((visit) => ({ ...visit, ...resolveDoctorRecipient(visit, clinics) }))
+      });
       return;
     }
 
@@ -81,6 +87,7 @@ function normalizeListVisits(rows = []) {
     PaymentMode: row.PaymentMode || '',
     Clinic: row.Clinic || '',
     ClinicName: row.ClinicName || row.Clinic || '',
+    ClinicNo: row.ClinicNo || row.ClinicNumber || '',
     Branch: row.Branch || row.branch || '',
     Location: row.Location || row.location || row.Branch || '',
     CollectionPoint: row.CollectionPoint || row.CollectionCentre || row.CollectionCenter || '',

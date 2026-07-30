@@ -5,6 +5,23 @@ import 'package:interpath_mobile/src/features/visits/visits_page.dart';
 import 'package:interpath_mobile/src/features/visits/visits_repository.dart';
 
 void main() {
+  test('completed visit includes an automatically resolved doctor recipient',
+      () {
+    final visit = Visit.fromJson(const {
+      'LabNumber': 'IP-2001',
+      'PatientName': 'Patient One',
+      'Status': 'Authorised',
+      'Doctor': 'Dr Example',
+      'DoctorPhoneNumber': '263772123456',
+      'CanSendToDoctor': true,
+    });
+
+    expect(visit.isCompleted, isTrue);
+    expect(visit.canSendToDoctor, isTrue);
+    expect(visit.doctor, 'Dr Example');
+    expect(visit.doctorPhoneNumber, '263772123456');
+  });
+
   test('employee API payload flows from visits into grouped result details',
       () {
     final visits = parseVisitsResponse({

@@ -1,14 +1,15 @@
 import { Router } from 'express';
 import { createHttpError } from '../../middleware/errorHandler.js';
 import { slisGet } from '../../services/slisApi.service.js';
+import { getClinicDirectory } from '../../services/clinicDirectory.service.js';
 
 export const clinicRouter = Router();
 const clinicsEndpoint = process.env.SLIS_CLINICS_URL || 'https://www.interpathresults.com/slismob/api/clinics/na';
 
 clinicRouter.get('/', requireClinicAuth, async (req, res, next) => {
   try {
-    const data = await getClinics(req.user.token);
-    res.json(normalizeClinicsResponse(data));
+    const clinics = await getClinicDirectory(req.user.token);
+    res.json({ status: 'Success', message: `${clinics.length} records found`, clinics });
   } catch (error) {
     next(error);
   }
@@ -18,8 +19,8 @@ clinicRouter.get('/:clinicNo', requireClinicAuth, async (req, res, next) => {
   try {
     const clinicNo = req.params.clinicNo;
     const clinicName = String(req.query.clinicName || req.get('Clinic') || '').trim();
-    const listData = clinicName ? null : await getClinics(req.user.token);
-    const clinicFromList = listData ? findClinic(normalizeClinicsResponse(listData).clinics, clinicNo) : null;
+    const listData = clinicName ? null : await getClinicDirectory(req.user.token);
+    const clinicFromList = listData ? findClinic(listData, clinicNo) : null;
     const selectedClinicName = clinicName || clinicFromList?.ClinicName || '';
     const detailData = await getClinics(req.user.token, selectedClinicName);
     const normalized = normalizeClinicsResponse(detailData);

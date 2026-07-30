@@ -7,7 +7,10 @@ class ApiException implements Exception {
   final String? code;
   final int? statusCode;
 
-  bool get isSessionExpired => statusCode == 401;
+  bool get isSessionExpired =>
+      statusCode == 401 &&
+      const {'AUTH_REQUIRED', 'TOKEN_EXPIRED', 'TOKEN_NOT_FOUND'}
+          .contains(code);
 
   factory ApiException.fromDio(DioException error) {
     final body = error.response?.data;

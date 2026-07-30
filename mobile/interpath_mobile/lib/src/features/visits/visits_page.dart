@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../shared/widgets/interpath_shell.dart';
 import '../../shared/services/api_exception.dart';
 import '../../shared/theme/interpath_theme.dart';
+import '../results/results_repository.dart';
 import 'employee_visit_settings.dart';
 import 'visit.dart';
 import 'visits_repository.dart';
@@ -32,6 +33,9 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
   final _searchController = TextEditingController();
   String _search = '';
   int _visibleCount = _pageSize;
+  int _activeTab = 0;
+  final Set<String> _selectedLabNumbers = {};
+  bool _sending = false;
 
   @override
   void dispose() {
@@ -94,6 +98,21 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                 ),
               ),
               const SizedBox(height: 16),
+              DefaultTabController(
+                length: 2,
+                initialIndex: _activeTab,
+                child: TabBar(
+                  onTap: (index) => setState(() {
+                    _activeTab = index;
+                    _visibleCount = _pageSize;
+                  }),
+                  tabs: const [
+                    Tab(text: 'All results'),
+                    Tab(text: 'Go to completed'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
               visitsState.when(
                 loading: () => const _LoadingVisits(),
                 error: (error, _) => _VisitsError(
@@ -101,20 +120,79 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                   onRetry: () => ref.invalidate(visitsProvider(query)),
                 ),
                 data: (items) {
-                  final filtered = filterVisits(items, _search);
+                  final source = _activeTab == 0
+                      ? items
+                      : items.where((visit) => visit.isCompleted).toList();
+                  final filtered = filterVisits(source, _search);
                   if (filtered.isEmpty) {
-                    return _EmptyVisits(hasSearch: _search.trim().isNotEmpty);
+                    return _EmptyVisits(
+                      hasSearch: _search.trim().isNotEmpty,
+                      completed: _activeTab == 1,
+                    );
                   }
                   final visible = filtered.take(_visibleCount).toList();
+                  final eligible =
+                      filtered.where((visit) => visit.canSendToDoctor).toList();
+                  final selected = eligible
+                      .where(
+                        (visit) =>
+                            _selectedLabNumbers.contains(visit.labNumber),
+                      )
+                      .toList();
+                  final allSelected =
+                      eligible.isNotEmpty && selected.length == eligible.length;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Text(
-                        '${filtered.length} visit${filtered.length == 1 ? '' : 's'}',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+                      if (_activeTab == 1)
+                        _CompletedActions(
+                          total: filtered.length,
+                          eligible: eligible.length,
+                          selected: selected.length,
+                          allSelected: allSelected,
+                          sending: _sending,
+                          onSelectAll: eligible.isEmpty
+                              ? null
+                              : (value) => setState(() {
+                                    if (value) {
+                                      _selectedLabNumbers.addAll(
+                                        eligible
+                                            .map((visit) => visit.labNumber),
+                                      );
+                                    } else {
+                                      _selectedLabNumbers.removeAll(
+                                        eligible
+                                            .map((visit) => visit.labNumber),
+                                      );
+                                    }
+                                  }),
+                          onReview: selected.isEmpty || _sending
+                              ? null
+                              : () => _reviewAndSend(selected),
+                        )
+                      else
+                        Text(
+                          '${filtered.length} visit${filtered.length == 1 ? '' : 's'}',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
                       const SizedBox(height: 10),
-                      for (final visit in visible) _VisitCard(visit: visit),
+                      for (final visit in visible)
+                        _VisitCard(
+                          visit: visit,
+                          selectable: _activeTab == 1,
+                          selected:
+                              _selectedLabNumbers.contains(visit.labNumber),
+                          onSelected: visit.canSendToDoctor
+                              ? (value) => setState(() {
+                                    if (value) {
+                                      _selectedLabNumbers.add(visit.labNumber);
+                                    } else {
+                                      _selectedLabNumbers
+                                          .remove(visit.labNumber);
+                                    }
+                                  })
+                              : null,
+                        ),
                       if (visible.length < filtered.length)
                         OutlinedButton.icon(
                           onPressed: () => setState(
@@ -132,6 +210,88 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
             ],
           );
         },
+      ),
+    );
+  }
+
+  Future<void> _reviewAndSend(List<Visit> visits) async {
+    final approved = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(
+          'Approve ${visits.length} result${visits.length == 1 ? '' : 's'}?',
+        ),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 420),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Check every recipient before sending. Each doctor will receive an approved WhatsApp template with a secure result link.',
+                ),
+                const SizedBox(height: 14),
+                for (final visit in visits)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.verified_user_outlined),
+                    title: Text(visit.patientName),
+                    subtitle: Text(
+                      '${visit.labNumber}\n${visit.doctor?.trim().isNotEmpty == true ? visit.doctor : visit.clinic}\n${maskPhone(visit.doctorPhoneNumber)}',
+                    ),
+                    isThreeLine: true,
+                  ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('Approve and send'),
+          ),
+        ],
+      ),
+    );
+    if (approved != true || !mounted) return;
+
+    setState(() => _sending = true);
+    var sent = 0;
+    final failures = <String, String>{};
+    for (final visit in visits) {
+      try {
+        await ref.read(resultsRepositoryProvider).sendWhatsAppResult(
+              labNumber: visit.labNumber,
+              phoneNumber: visit.doctorPhoneNumber!,
+              patientName: visit.patientName,
+            );
+        sent += 1;
+      } catch (error) {
+        failures[visit.labNumber] = apiErrorMessage(error);
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _sending = false;
+      _selectedLabNumbers.removeAll(
+        visits.where((visit) => !failures.containsKey(visit.labNumber)).map(
+              (visit) => visit.labNumber,
+            ),
+      );
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          failures.isEmpty
+              ? '$sent WhatsApp result${sent == 1 ? '' : 's'} sent.'
+              : '$sent sent. ${failures.length} failed. ${failures.entries.map((failure) => '${failure.key}: ${failure.value}').join(' | ')}',
+        ),
       ),
     );
   }
@@ -292,8 +452,9 @@ class _VisitsError extends StatelessWidget {
 }
 
 class _EmptyVisits extends StatelessWidget {
-  const _EmptyVisits({required this.hasSearch});
+  const _EmptyVisits({required this.hasSearch, this.completed = false});
   final bool hasSearch;
+  final bool completed;
 
   @override
   Widget build(BuildContext context) {
@@ -303,7 +464,13 @@ class _EmptyVisits extends StatelessWidget {
         children: [
           const Icon(Icons.inbox_outlined, size: 42),
           const SizedBox(height: 10),
-          Text(hasSearch ? 'No visits match your search.' : 'No visits found.'),
+          Text(
+            hasSearch
+                ? 'No visits match your search.'
+                : completed
+                    ? 'No completed results found.'
+                    : 'No visits found.',
+          ),
         ],
       ),
     );
@@ -311,8 +478,16 @@ class _EmptyVisits extends StatelessWidget {
 }
 
 class _VisitCard extends StatelessWidget {
-  const _VisitCard({required this.visit});
+  const _VisitCard({
+    required this.visit,
+    this.selectable = false,
+    this.selected = false,
+    this.onSelected,
+  });
   final Visit visit;
+  final bool selectable;
+  final bool selected;
+  final ValueChanged<bool>? onSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -321,18 +496,25 @@ class _VisitCard extends StatelessWidget {
       child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(15, 13, 12, 13),
         onTap: () => context.push('/visits/${visit.labNumber}', extra: visit),
-        leading: Container(
-          width: 46,
-          height: 46,
-          decoration: BoxDecoration(
-            color: InterpathColors.softBlue,
-            borderRadius: BorderRadius.circular(14),
-          ),
-          child: const Icon(
-            Icons.science_outlined,
-            color: InterpathColors.primaryBlue,
-          ),
-        ),
+        leading: selectable
+            ? Checkbox(
+                value: selected,
+                onChanged: onSelected == null
+                    ? null
+                    : (value) => onSelected!(value ?? false),
+              )
+            : Container(
+                width: 46,
+                height: 46,
+                decoration: BoxDecoration(
+                  color: InterpathColors.softBlue,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.science_outlined,
+                  color: InterpathColors.primaryBlue,
+                ),
+              ),
         title: Text(
           visit.patientName.isEmpty ? 'Unnamed patient' : visit.patientName,
           maxLines: 1,
@@ -379,13 +561,94 @@ class _VisitCard extends StatelessWidget {
               if (visit.tests.isNotEmpty)
                 Text(visit.tests, maxLines: 2, overflow: TextOverflow.ellipsis),
               if ((visit.clinic ?? '').isNotEmpty) Text(visit.clinic!),
+              if (selectable && visit.canSendToDoctor)
+                Text(
+                  'To ${visit.doctor?.trim().isNotEmpty == true ? visit.doctor : 'doctor'} • ${maskPhone(visit.doctorPhoneNumber)}',
+                  style: const TextStyle(color: InterpathColors.successGreen),
+                ),
+              if (selectable && !visit.canSendToDoctor)
+                Text(
+                  'Doctor mobile number unavailable',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
             ],
           ),
         ),
-        trailing: const Icon(Icons.chevron_right_rounded),
+        trailing: selectable ? null : const Icon(Icons.chevron_right_rounded),
       ),
     );
   }
+}
+
+class _CompletedActions extends StatelessWidget {
+  const _CompletedActions({
+    required this.total,
+    required this.eligible,
+    required this.selected,
+    required this.allSelected,
+    required this.sending,
+    required this.onSelectAll,
+    required this.onReview,
+  });
+
+  final int total;
+  final int eligible;
+  final int selected;
+  final bool allSelected;
+  final bool sending;
+  final ValueChanged<bool>? onSelectAll;
+  final VoidCallback? onReview;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Checkbox(
+                  value: allSelected,
+                  onChanged: onSelectAll == null
+                      ? null
+                      : (value) => onSelectAll!(value ?? false),
+                ),
+                Expanded(
+                  child: Text(
+                    'Select all ($eligible ready of $total)',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton.icon(
+              onPressed: onReview,
+              icon: sending
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.fact_check_outlined),
+              label: Text(
+                sending
+                    ? 'Sending approved results…'
+                    : 'Review and send ($selected)',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String maskPhone(String? value) {
+  final phone = (value ?? '').trim();
+  if (phone.length < 6) return phone;
+  return '${phone.substring(0, 5)}•••${phone.substring(phone.length - 3)}';
 }
 
 class _ControlIcon extends StatelessWidget {
