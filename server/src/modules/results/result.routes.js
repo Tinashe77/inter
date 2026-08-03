@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
+import { z } from 'zod';
 import { requireAuth } from '../../middleware/requireAuth.js';
 import { buildPdfUrl, slisGet } from '../../services/slisApi.service.js';
 import { writeAudit } from '../audit/audit.service.js';
@@ -8,8 +9,14 @@ import { ShareLink } from './shareLink.model.js';
 import { parseSlisListResponse, assertSlisObjectSuccess } from '../../utils/slisResponse.js';
 import { sendWhatsAppResultTemplate } from '../../services/whatsappCloud.service.js';
 import { WhatsAppMessage } from '../whatsapp/whatsappMessage.model.js';
+import { fetchEmployeeVisits, isCompletedVisit } from '../../services/employeeVisits.service.js';
 
 export const resultRouter = Router();
+const bulkSendSchema = z.object({
+  date: z.string().min(1),
+  branch: z.string().min(1).default('ALL'),
+  labNumbers: z.array(z.string().min(1)).min(1).max(50)
+});
 
 function normalizeResults(rows = []) {
   const metadata = {
@@ -46,6 +53,78 @@ function normalizeResults(rows = []) {
   const pdfGenerated = metadata.pdfStatus?.toLowerCase().includes('pdf status - generated') || false;
   return { results: dataRows, metadata, pdfGenerated };
 }
+
+resultRouter.post('/bulk-whatsapp/send', requireAuth(['Employee']), async (req, res, next) => {
+  try {
+    const body = bulkSendSchema.parse(req.body || {});
+    const requestedLabNumbers = [...new Set(body.labNumbers.map(normalizeLabNumber))];
+    const visits = await fetchEmployeeVisits({
+      token: req.user.token,
+      date: body.date,
+      branch: body.branch
+    });
+    const visitsByLabNumber = new Map(
+      visits.map((visit) => [normalizeLabNumber(visit.LabNumber), visit])
+    );
+
+    const results = await mapWithConcurrency(requestedLabNumbers, 3, async (labNumber) => {
+      const visit = visitsByLabNumber.get(labNumber);
+      if (!visit) {
+        return bulkFailure(labNumber, 'RESULT_NOT_FOUND', 'The selected result was not found for this branch and date.');
+      }
+      if (!isCompletedVisit(visit)) {
+        return bulkFailure(labNumber, 'RESULT_NOT_COMPLETED', 'The result is not completed or authorised.');
+      }
+      if (!visit.CanSendToDoctor || !visit.DoctorPhoneNumber) {
+        return bulkFailure(labNumber, 'RECIPIENT_UNAVAILABLE', 'A valid doctor mobile number with country code could not be resolved.');
+      }
+
+      try {
+        const { shareUrl } = await createResultShareLink(req, {
+          labNumber: visit.LabNumber,
+          whatsappSafe: true
+        });
+        const recipientName = visit.Doctor || visit.RecipientClinicName || 'Doctor';
+        const whatsapp = await sendWhatsAppResultTemplate({
+          to: visit.DoctorPhoneNumber,
+          recipientName,
+          labNumber: visit.LabNumber,
+          shareUrl
+        });
+        await recordWhatsAppMessage({
+          whatsapp,
+          labNumber: visit.LabNumber
+        });
+        await writeAudit(req, 'WHATSAPP_SHARE', {
+          labNumber: visit.LabNumber,
+          channel: 'meta-cloud-api-bulk',
+          phoneNumber: visit.DoctorPhoneNumber,
+          messageId: whatsapp.messageId
+        });
+        return {
+          labNumber: visit.LabNumber,
+          status: 'sent',
+          recipientName,
+          destination: visit.DoctorPhoneNumber,
+          messageId: whatsapp.messageId
+        };
+      } catch (error) {
+        return bulkFailure(visit.LabNumber, error.code || 'WHATSAPP_SEND_FAILED', error.message);
+      }
+    });
+
+    const sent = results.filter((result) => result.status === 'sent').length;
+    res.json({
+      status: sent === results.length ? 'ok' : sent === 0 ? 'failed' : 'partial',
+      requested: requestedLabNumbers.length,
+      sent,
+      failed: results.length - sent,
+      results
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 resultRouter.get('/:labNumber', requireAuth(['Patient', 'Clinic_Doctor', 'Employee']), async (req, res, next) => {
   try {
@@ -280,7 +359,7 @@ resultRouter.post('/:labNumber/share-link', requireAuth(['Patient', 'Clinic_Doct
 
 resultRouter.post('/:labNumber/send-whatsapp', requireAuth(['Patient', 'Clinic_Doctor', 'Employee']), async (req, res, next) => {
   try {
-    const { labNumber, shareUrl } = await createResultShareLink(req);
+    const { labNumber, shareUrl } = await createResultShareLink(req, { whatsappSafe: true });
     const destination = req.body?.phoneNumber;
     const patientName = req.body?.patientName || 'the patient';
     const whatsapp = await sendWhatsAppResultTemplate({
@@ -290,20 +369,7 @@ resultRouter.post('/:labNumber/send-whatsapp', requireAuth(['Patient', 'Clinic_D
       shareUrl
     });
 
-    if (whatsapp.messageId) {
-      await WhatsAppMessage.findOneAndUpdate(
-        { metaMessageId: whatsapp.messageId },
-        {
-          $set: {
-            recipientWaId: whatsapp.contactWaId,
-            labNumber,
-            status: 'accepted',
-            statusTimestamp: new Date()
-          }
-        },
-        { upsert: true, new: true }
-      );
-    }
+    await recordWhatsAppMessage({ whatsapp, labNumber });
 
     await writeAudit(req, 'WHATSAPP_SHARE', {
       labNumber,
@@ -323,8 +389,8 @@ resultRouter.post('/:labNumber/send-whatsapp', requireAuth(['Patient', 'Clinic_D
   }
 });
 
-async function createResultShareLink(req) {
-  const labNumber = req.params.labNumber;
+async function createResultShareLink(req, options = {}) {
+  const labNumber = options.labNumber || req.params.labNumber;
   const token = crypto.randomBytes(32).toString('hex');
   const pdfUrl = req.user.usertype === 'Employee'
     ? await getGeneratedEmployeePdfUrl(labNumber, req.user.token)
@@ -340,8 +406,48 @@ async function createResultShareLink(req) {
 
   return {
     labNumber,
-    shareUrl: `${getShareBaseUrl(req)}/api/results/share/${token}/pdf`
+    shareUrl: `${getShareBaseUrl(req)}/api/results/share/${token}/pdf${options.whatsappSafe ? '#report' : ''}`
   };
+}
+
+async function recordWhatsAppMessage({ whatsapp, labNumber }) {
+  if (!whatsapp.messageId) return;
+  await WhatsAppMessage.findOneAndUpdate(
+    { metaMessageId: whatsapp.messageId },
+    {
+      $set: {
+        recipientWaId: whatsapp.contactWaId,
+        labNumber,
+        status: 'accepted',
+        statusTimestamp: new Date()
+      }
+    },
+    { upsert: true, new: true }
+  );
+}
+
+function normalizeLabNumber(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function bulkFailure(labNumber, code, message) {
+  return { labNumber, status: 'failed', code, message };
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker())
+  );
+  return results;
 }
 
 function getShareBaseUrl(req) {

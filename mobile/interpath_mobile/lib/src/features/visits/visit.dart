@@ -11,6 +11,7 @@ class Visit {
     this.doctor,
     this.doctorPhoneNumber,
     this.canSendToDoctor = false,
+    this.recipientValidation,
   });
 
   final String labNumber;
@@ -24,6 +25,7 @@ class Visit {
   final String? doctor;
   final String? doctorPhoneNumber;
   final bool canSendToDoctor;
+  final String? recipientValidation;
 
   bool get isCompleted {
     final value = status.trim().toLowerCase();
@@ -32,6 +34,7 @@ class Visit {
         value.contains('authorized') ||
         value.contains('reported') ||
         value.contains('result ready') ||
+        value == 'success' ||
         value == 'final';
   }
 
@@ -48,6 +51,7 @@ class Visit {
       doctor: json['Doctor']?.toString(),
       doctorPhoneNumber: json['DoctorPhoneNumber']?.toString(),
       canSendToDoctor: json['CanSendToDoctor'] == true,
+      recipientValidation: json['RecipientValidation']?.toString(),
     );
   }
 }

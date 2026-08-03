@@ -22,7 +22,7 @@ function getConfig() {
   return config;
 }
 
-export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, shareUrl }) {
+export async function sendWhatsAppResultTemplate({ to, recipientName, patientName, labNumber, shareUrl }) {
   const config = getConfig();
   const destination = normalizePhone(to);
   if (!destination) {
@@ -45,7 +45,7 @@ export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, s
           name: config.templateName,
           language: { code: config.templateLanguage },
           components: buildResultTemplateComponents({
-            patientName,
+            recipientName: recipientName || patientName,
             labNumber,
             shareUrl
           })
@@ -70,8 +70,8 @@ export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, s
   };
 }
 
-export function buildResultTemplateComponents({ patientName, labNumber, shareUrl }) {
-  const displayName = String(patientName || 'Patient').trim() || 'Patient';
+export function buildResultTemplateComponents({ recipientName, patientName, labNumber, shareUrl }) {
+  const displayName = String(recipientName || patientName || 'Doctor').trim() || 'Doctor';
   return [
     {
       type: 'header',

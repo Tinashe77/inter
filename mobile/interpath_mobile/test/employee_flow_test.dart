@@ -1,10 +1,32 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:interpath_mobile/src/features/results/result_models.dart';
+import 'package:interpath_mobile/src/features/results/results_repository.dart';
 import 'package:interpath_mobile/src/features/visits/visit.dart';
 import 'package:interpath_mobile/src/features/visits/visits_page.dart';
 import 'package:interpath_mobile/src/features/visits/visits_repository.dart';
 
 void main() {
+  test('bulk WhatsApp response preserves each lab result status', () {
+    final result = BulkWhatsAppSendResult.fromJson(const {
+      'sent': 1,
+      'failed': 1,
+      'results': [
+        {'labNumber': 'LAB-1', 'status': 'sent'},
+        {
+          'labNumber': 'LAB-2',
+          'status': 'failed',
+          'message': 'Recipient unavailable',
+        },
+      ],
+    });
+
+    expect(result.sent, 1);
+    expect(result.failed, 1);
+    expect(result.items.first.labNumber, 'LAB-1');
+    expect(result.items.first.wasSent, isTrue);
+    expect(result.items.last.message, 'Recipient unavailable');
+  });
+
   test('completed visit includes an automatically resolved doctor recipient',
       () {
     final visit = Visit.fromJson(const {

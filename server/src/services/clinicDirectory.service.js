@@ -31,13 +31,15 @@ export function resolveDoctorRecipient(visit, clinics = []) {
   });
 
   if (!clinic) return emptyRecipient();
-  const phoneNumber = firstZimbabweMobile(clinic.phone || clinic.Phone || clinic.PhoneNumber);
+  const phoneNumbers = validWhatsAppNumbers(clinic.phone || clinic.Phone || clinic.PhoneNumber);
+  const phoneNumber = phoneNumbers.length === 1 ? phoneNumbers[0] : '';
   return {
     Doctor: String(clinic.Doctor || clinic.ClinicName || '').trim(),
     DoctorPhoneNumber: phoneNumber,
     RecipientClinicNo: String(clinic.ClinicNo || '').trim(),
     RecipientClinicName: String(clinic.ClinicName || '').trim(),
-    CanSendToDoctor: Boolean(phoneNumber)
+    CanSendToDoctor: Boolean(phoneNumber),
+    RecipientValidation: phoneNumbers.length > 1 ? 'ambiguous' : phoneNumber ? 'valid' : 'missing'
   };
 }
 
@@ -47,7 +49,8 @@ function emptyRecipient() {
     DoctorPhoneNumber: '',
     RecipientClinicNo: '',
     RecipientClinicName: '',
-    CanSendToDoctor: false
+    CanSendToDoctor: false,
+    RecipientValidation: 'missing'
   };
 }
 
@@ -55,13 +58,21 @@ function normalizeText(value) {
   return String(value || '').trim().replace(/\s+/g, ' ').toUpperCase();
 }
 
-function firstZimbabweMobile(value) {
+export function validWhatsAppNumbers(value) {
   const candidates = String(value || '').split(/[\/,;|]+/);
+  const normalized = [];
   for (const candidate of candidates) {
+    const hasInternationalPrefix = /^\s*(?:\+|00)/.test(candidate);
     const digits = candidate.replace(/\D/g, '');
-    if (/^07\d{8}$/.test(digits)) return `263${digits.slice(1)}`;
-    if (/^7\d{8}$/.test(digits)) return `263${digits}`;
-    if (/^2637\d{8}$/.test(digits)) return digits;
+    let phoneNumber = '';
+    if (/^07\d{8}$/.test(digits)) phoneNumber = `263${digits.slice(1)}`;
+    else if (/^7\d{8}$/.test(digits)) phoneNumber = `263${digits}`;
+    else if (/^2637\d{8}$/.test(digits)) phoneNumber = digits;
+    else if (hasInternationalPrefix) {
+      const international = digits.startsWith('00') ? digits.slice(2) : digits;
+      if (/^[1-9]\d{7,14}$/.test(international)) phoneNumber = international;
+    }
+    if (phoneNumber && !normalized.includes(phoneNumber)) normalized.push(phoneNumber);
   }
-  return '';
+  return normalized;
 }

@@ -4,7 +4,7 @@ import { requireAuth } from '../../middleware/requireAuth.js';
 import { slisGet } from '../../services/slisApi.service.js';
 import { normalizeDateForSlis } from '../../utils/formatters.js';
 import { parseSlisListResponse } from '../../utils/slisResponse.js';
-import { getClinicDirectory, resolveDoctorRecipient } from '../../services/clinicDirectory.service.js';
+import { fetchEmployeeVisits } from '../../services/employeeVisits.service.js';
 
 export const visitRouter = Router();
 
@@ -28,26 +28,19 @@ visitRouter.get('/', requireAuth(['Clinic_Doctor', 'Employee']), async (req, res
     }).parse(req.query);
 
     if (req.user.usertype === 'Employee') {
-      const date = normalizeDateForSlis(query.date || query.dateTo || query.dateFrom);
-      const branch = encodeURIComponent(query.branch || 'ALL');
+      const date = query.date || query.dateTo || query.dateFrom;
+      const branch = query.branch || 'ALL';
       if (process.env.NODE_ENV !== 'production') {
         console.log(`SLIS employee list path: /api/List/${branch}/${date}`);
       }
-      const rows = await slisGet(`/api/List/${branch}/${date}`, {
-        headers: {
-          Authorization: `Bearer ${req.user.token}`
-        }
+      const visits = await fetchEmployeeVisits({
+        token: req.user.token,
+        date,
+        branch
       });
-      if (isEmptyListFailure(rows)) {
-        res.json({ message: 'No results were returned by SLIS for the selected date.', visits: [] });
-        return;
-      }
-      const parsed = parseSlisListResponse(rows);
-      const visits = normalizeListVisits(parsed.rows);
-      const clinics = await getClinicDirectory(req.user.token).catch(() => []);
       res.json({
-        message: parsed.message || (parsed.rows.length ? null : 'No records were found for the selected date.'),
-        visits: visits.map((visit) => ({ ...visit, ...resolveDoctorRecipient(visit, clinics) }))
+        message: visits.length ? null : 'No records were found for the selected date.',
+        visits
       });
       return;
     }
@@ -71,37 +64,3 @@ visitRouter.get('/', requireAuth(['Clinic_Doctor', 'Employee']), async (req, res
     next(error);
   }
 });
-
-function normalizeListVisits(rows = []) {
-  if (!Array.isArray(rows)) return [];
-  return rows.map((row) => ({
-    LabNumber: row.LabNumber || '',
-    OLBNumber: row.OLBNumber || '',
-    PatientName: row.PatientName || '',
-    IDNumber: '',
-    Sex: row.Sex || '',
-    Address: '',
-    PhoneNumber: '',
-    DateOfBirth: row.DateOfBirth || '',
-    VisitDate: row.VisitDate || '',
-    PaymentMode: row.PaymentMode || '',
-    Clinic: row.Clinic || '',
-    ClinicName: row.ClinicName || row.Clinic || '',
-    ClinicNo: row.ClinicNo || row.ClinicNumber || '',
-    Branch: row.Branch || row.branch || '',
-    Location: row.Location || row.location || row.Branch || '',
-    CollectionPoint: row.CollectionPoint || row.CollectionCentre || row.CollectionCenter || '',
-    Doctor: '',
-    ClinicalData: row.Critical || '',
-    Tests: row.Tests || '',
-    Status: row.Status || '',
-    Critical: row.Critical || ''
-  }));
-}
-
-function isEmptyListFailure(rows = []) {
-  if (!Array.isArray(rows) || rows.length !== 1) return false;
-  const first = rows[0];
-  return String(first?.LabNumber || '').startsWith('Status-Failed')
-    && /object reference not set/i.test(String(first?.PatientName || ''));
-}

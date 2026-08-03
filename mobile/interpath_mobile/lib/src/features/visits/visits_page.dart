@@ -48,7 +48,7 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
     final settingsState = ref.watch(employeeVisitSettingsProvider);
 
     return InterpathShell(
-      title: 'Visits',
+      title: 'Results',
       child: settingsState.when(
         loading: () => const _LoadingVisits(),
         error: (_, __) => const Text('Unable to load visit preferences.'),
@@ -79,7 +79,7 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                   _visibleCount = _pageSize;
                 }),
                 decoration: InputDecoration(
-                  labelText: 'Search visits',
+                  labelText: 'Search results',
                   hintText: 'Patient, lab number, test or clinic',
                   prefixIcon: const Icon(Icons.search_rounded),
                   suffixIcon: _search.isEmpty
@@ -107,8 +107,8 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                     _visibleCount = _pageSize;
                   }),
                   tabs: const [
-                    Tab(text: 'All results'),
-                    Tab(text: 'Go to completed'),
+                    Tab(text: 'Results'),
+                    Tab(text: 'Bulk send'),
                   ],
                 ),
               ),
@@ -168,11 +168,11 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                                   }),
                           onReview: selected.isEmpty || _sending
                               ? null
-                              : () => _reviewAndSend(selected),
+                              : () => _reviewAndSend(selected, settings),
                         )
                       else
                         Text(
-                          '${filtered.length} visit${filtered.length == 1 ? '' : 's'}',
+                          '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
                           style: Theme.of(context).textTheme.titleMedium,
                         ),
                       const SizedBox(height: 10),
@@ -214,7 +214,10 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
     );
   }
 
-  Future<void> _reviewAndSend(List<Visit> visits) async {
+  Future<void> _reviewAndSend(
+    List<Visit> visits,
+    EmployeeVisitSettings settings,
+  ) async {
     final approved = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -229,7 +232,7 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Check every recipient before sending. Each doctor will receive an approved WhatsApp template with a secure result link.',
+                  'Verify every lab-to-recipient pairing. The server will re-check each completed result, normalize its doctor number and create a separate secure link before sending.',
                 ),
                 const SizedBox(height: 14),
                 for (final visit in visits)
@@ -262,38 +265,40 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
     if (approved != true || !mounted) return;
 
     setState(() => _sending = true);
-    var sent = 0;
-    final failures = <String, String>{};
-    for (final visit in visits) {
-      try {
-        await ref.read(resultsRepositoryProvider).sendWhatsAppResult(
-              labNumber: visit.labNumber,
-              phoneNumber: visit.doctorPhoneNumber!,
-              patientName: visit.patientName,
-            );
-        sent += 1;
-      } catch (error) {
-        failures[visit.labNumber] = apiErrorMessage(error);
-      }
-    }
-    if (!mounted) return;
-    setState(() {
-      _sending = false;
-      _selectedLabNumbers.removeAll(
-        visits.where((visit) => !failures.containsKey(visit.labNumber)).map(
-              (visit) => visit.labNumber,
-            ),
-      );
-    });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          failures.isEmpty
-              ? '$sent WhatsApp result${sent == 1 ? '' : 's'} sent.'
-              : '$sent sent. ${failures.length} failed. ${failures.entries.map((failure) => '${failure.key}: ${failure.value}').join(' | ')}',
+    try {
+      final result =
+          await ref.read(resultsRepositoryProvider).sendBulkWhatsAppResults(
+                date: settings.date,
+                branch: settings.branch,
+                labNumbers: visits.map((visit) => visit.labNumber).toList(),
+              );
+      if (!mounted) return;
+      final sentLabNumbers = result.items
+          .where((item) => item.wasSent)
+          .map((item) => item.labNumber);
+      setState(() => _selectedLabNumbers.removeAll(sentLabNumbers));
+      final failureMessages = result.items
+          .where((item) => !item.wasSent)
+          .map((item) => '${item.labNumber}: ${item.message ?? 'Not sent'}')
+          .join(' | ');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result.failed == 0
+                ? '${result.sent} WhatsApp result${result.sent == 1 ? '' : 's'} sent to the verified recipients.'
+                : '${result.sent} sent; ${result.failed} blocked or failed. $failureMessages',
+          ),
         ),
-      ),
-    );
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(apiErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
   }
 }
 
@@ -342,7 +347,7 @@ class _VisitControls extends ConsumerWidget {
                 Icon(Icons.tune_rounded, color: InterpathColors.primaryBlue),
                 SizedBox(width: 10),
                 Text(
-                  'Visit filters',
+                  'Result filters',
                   style: TextStyle(
                     fontSize: 17,
                     fontWeight: FontWeight.w700,
@@ -392,7 +397,7 @@ class _VisitControls extends ConsumerWidget {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.refresh_rounded),
-              label: Text(isLoading ? 'Loading visits…' : 'Refresh visits'),
+              label: Text(isLoading ? 'Loading results…' : 'Refresh results'),
             ),
           ],
         ),
@@ -412,7 +417,7 @@ class _LoadingVisits extends StatelessWidget {
         children: [
           CircularProgressIndicator(),
           SizedBox(height: 16),
-          Text('Loading visits from SLIS…'),
+          Text('Loading results from SLIS…'),
           SizedBox(height: 6),
           Text(
             'This may take up to a minute.',
@@ -466,10 +471,10 @@ class _EmptyVisits extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             hasSearch
-                ? 'No visits match your search.'
+                ? 'No results match your search.'
                 : completed
                     ? 'No completed results found.'
-                    : 'No visits found.',
+                    : 'No results found.',
           ),
         ],
       ),
@@ -495,7 +500,11 @@ class _VisitCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       child: ListTile(
         contentPadding: const EdgeInsets.fromLTRB(15, 13, 12, 13),
-        onTap: () => context.push('/visits/${visit.labNumber}', extra: visit),
+        onTap: selectable
+            ? onSelected == null
+                ? null
+                : () => onSelected!(!selected)
+            : () => context.push('/visits/${visit.labNumber}', extra: visit),
         leading: selectable
             ? Checkbox(
                 value: selected,
@@ -568,7 +577,9 @@ class _VisitCard extends StatelessWidget {
                 ),
               if (selectable && !visit.canSendToDoctor)
                 Text(
-                  'Doctor mobile number unavailable',
+                  visit.recipientValidation == 'ambiguous'
+                      ? 'Multiple doctor numbers found — review clinic data'
+                      : 'Valid doctor number with country code unavailable',
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
             ],
@@ -617,7 +628,7 @@ class _CompletedActions extends StatelessWidget {
                 ),
                 Expanded(
                   child: Text(
-                    'Select all ($eligible ready of $total)',
+                    'Select all valid ($eligible ready of $total)',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -635,7 +646,7 @@ class _CompletedActions extends StatelessWidget {
               label: Text(
                 sending
                     ? 'Sending approved results…'
-                    : 'Review and send ($selected)',
+                    : 'Send via WhatsApp ($selected)',
               ),
             ),
           ],
