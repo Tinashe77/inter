@@ -21,6 +21,11 @@ final visitsProvider =
       );
 });
 
+final whatsappAttemptsProvider =
+    FutureProvider.autoDispose<List<WhatsAppSendAttempt>>((ref) {
+  return ref.read(resultsRepositoryProvider).listWhatsAppAttempts();
+});
+
 class VisitsPage extends ConsumerStatefulWidget {
   const VisitsPage({super.key});
 
@@ -66,40 +71,8 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _VisitControls(
-                settings: settings,
-                isLoading: visitsState.isLoading,
-                onRefresh: () => ref.invalidate(visitsProvider(query)),
-              ),
-              const SizedBox(height: 14),
-              TextField(
-                controller: _searchController,
-                onChanged: (value) => setState(() {
-                  _search = value;
-                  _visibleCount = _pageSize;
-                }),
-                decoration: InputDecoration(
-                  labelText: 'Search results',
-                  hintText: 'Patient, lab number, test or clinic',
-                  prefixIcon: const Icon(Icons.search_rounded),
-                  suffixIcon: _search.isEmpty
-                      ? null
-                      : IconButton(
-                          tooltip: 'Clear search',
-                          onPressed: () {
-                            _searchController.clear();
-                            setState(() {
-                              _search = '';
-                              _visibleCount = _pageSize;
-                            });
-                          },
-                          icon: const Icon(Icons.clear_rounded),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 16),
               DefaultTabController(
-                length: 2,
+                length: 3,
                 initialIndex: _activeTab,
                 child: TabBar(
                   onTap: (index) => setState(() {
@@ -109,104 +82,151 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                   tabs: const [
                     Tab(text: 'Results'),
                     Tab(text: 'Bulk send'),
+                    Tab(text: 'Send history'),
                   ],
                 ),
               ),
               const SizedBox(height: 16),
-              visitsState.when(
-                loading: () => const _LoadingVisits(),
-                error: (error, _) => _VisitsError(
-                  message: apiErrorMessage(error),
-                  onRetry: () => ref.invalidate(visitsProvider(query)),
+              if (_activeTab != 2) ...[
+                _VisitControls(
+                  settings: settings,
+                  isLoading: visitsState.isLoading,
+                  onRefresh: () => ref.invalidate(visitsProvider(query)),
                 ),
-                data: (items) {
-                  final source = _activeTab == 0
-                      ? items
-                      : items.where((visit) => visit.isCompleted).toList();
-                  final filtered = filterVisits(source, _search);
-                  if (filtered.isEmpty) {
-                    return _EmptyVisits(
-                      hasSearch: _search.trim().isNotEmpty,
-                      completed: _activeTab == 1,
-                    );
-                  }
-                  final visible = filtered.take(_visibleCount).toList();
-                  final eligible =
-                      filtered.where((visit) => visit.canSendToDoctor).toList();
-                  final selected = eligible
-                      .where(
-                        (visit) =>
-                            _selectedLabNumbers.contains(visit.labNumber),
-                      )
-                      .toList();
-                  final allSelected =
-                      eligible.isNotEmpty && selected.length == eligible.length;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      if (_activeTab == 1)
-                        _CompletedActions(
-                          total: filtered.length,
-                          eligible: eligible.length,
-                          selected: selected.length,
-                          allSelected: allSelected,
-                          sending: _sending,
-                          onSelectAll: eligible.isEmpty
-                              ? null
-                              : (value) => setState(() {
-                                    if (value) {
-                                      _selectedLabNumbers.addAll(
-                                        eligible
-                                            .map((visit) => visit.labNumber),
-                                      );
-                                    } else {
-                                      _selectedLabNumbers.removeAll(
-                                        eligible
-                                            .map((visit) => visit.labNumber),
-                                      );
-                                    }
-                                  }),
-                          onReview: selected.isEmpty || _sending
-                              ? null
-                              : () => _reviewAndSend(selected, settings),
-                        )
-                      else
-                        Text(
-                          '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                      const SizedBox(height: 10),
-                      for (final visit in visible)
-                        _VisitCard(
-                          visit: visit,
-                          selectable: _activeTab == 1,
-                          selected:
+                const SizedBox(height: 14),
+                TextField(
+                  controller: _searchController,
+                  onChanged: (value) => setState(() {
+                    _search = value;
+                    _visibleCount = _pageSize;
+                  }),
+                  decoration: InputDecoration(
+                    labelText: 'Search results',
+                    hintText: 'Patient, lab number, test or clinic',
+                    prefixIcon: const Icon(Icons.search_rounded),
+                    suffixIcon: _search.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Clear search',
+                            onPressed: () {
+                              _searchController.clear();
+                              setState(() {
+                                _search = '';
+                                _visibleCount = _pageSize;
+                              });
+                            },
+                            icon: const Icon(Icons.clear_rounded),
+                          ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (_activeTab == 2)
+                _WhatsAppSendHistory(
+                  attempts: ref.watch(whatsappAttemptsProvider),
+                  onRefresh: () => ref.invalidate(whatsappAttemptsProvider),
+                  onRetry: _retryAttempt,
+                )
+              else
+                visitsState.when(
+                  loading: () => const _LoadingVisits(),
+                  error: (error, _) => _VisitsError(
+                    message: apiErrorMessage(error),
+                    onRetry: () => ref.invalidate(visitsProvider(query)),
+                  ),
+                  data: (items) {
+                    final source = _activeTab == 0
+                        ? items
+                        : items
+                            .where(
+                              (visit) =>
+                                  visit.isCompleted && visit.canSendToDoctor,
+                            )
+                            .toList();
+                    final filtered = filterVisits(source, _search);
+                    if (filtered.isEmpty) {
+                      return _EmptyVisits(
+                        hasSearch: _search.trim().isNotEmpty,
+                        completed: _activeTab == 1,
+                      );
+                    }
+                    final visible = filtered.take(_visibleCount).toList();
+                    final eligible = filtered;
+                    final selected = eligible
+                        .where(
+                          (visit) =>
                               _selectedLabNumbers.contains(visit.labNumber),
-                          onSelected: visit.canSendToDoctor
-                              ? (value) => setState(() {
-                                    if (value) {
-                                      _selectedLabNumbers.add(visit.labNumber);
-                                    } else {
-                                      _selectedLabNumbers
-                                          .remove(visit.labNumber);
-                                    }
-                                  })
-                              : null,
-                        ),
-                      if (visible.length < filtered.length)
-                        OutlinedButton.icon(
-                          onPressed: () => setState(
-                            () => _visibleCount += _pageSize,
+                        )
+                        .toList();
+                    final allSelected = eligible.isNotEmpty &&
+                        selected.length == eligible.length;
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        if (_activeTab == 1)
+                          _CompletedActions(
+                            total: filtered.length,
+                            eligible: eligible.length,
+                            selected: selected.length,
+                            allSelected: allSelected,
+                            sending: _sending,
+                            onSelectAll: eligible.isEmpty
+                                ? null
+                                : (value) => setState(() {
+                                      if (value) {
+                                        _selectedLabNumbers.addAll(
+                                          eligible
+                                              .map((visit) => visit.labNumber),
+                                        );
+                                      } else {
+                                        _selectedLabNumbers.removeAll(
+                                          eligible
+                                              .map((visit) => visit.labNumber),
+                                        );
+                                      }
+                                    }),
+                            onReview: selected.isEmpty || _sending
+                                ? null
+                                : () => _reviewAndSend(selected, settings),
+                          )
+                        else
+                          Text(
+                            '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
-                          icon: const Icon(Icons.expand_more_rounded),
-                          label: Text(
-                            'Load more (${filtered.length - visible.length} remaining)',
+                        const SizedBox(height: 10),
+                        for (final visit in visible)
+                          _VisitCard(
+                            visit: visit,
+                            selectable: _activeTab == 1,
+                            selected:
+                                _selectedLabNumbers.contains(visit.labNumber),
+                            onSelected: visit.canSendToDoctor
+                                ? (value) => setState(() {
+                                      if (value) {
+                                        _selectedLabNumbers
+                                            .add(visit.labNumber);
+                                      } else {
+                                        _selectedLabNumbers
+                                            .remove(visit.labNumber);
+                                      }
+                                    })
+                                : null,
                           ),
-                        ),
-                    ],
-                  );
-                },
-              ),
+                        if (visible.length < filtered.length)
+                          OutlinedButton.icon(
+                            onPressed: () => setState(
+                              () => _visibleCount += _pageSize,
+                            ),
+                            icon: const Icon(Icons.expand_more_rounded),
+                            label: Text(
+                              'Load more (${filtered.length - visible.length} remaining)',
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
             ],
           );
         },
@@ -285,8 +305,8 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
         SnackBar(
           content: Text(
             result.failed == 0
-                ? '${result.sent} WhatsApp result${result.sent == 1 ? '' : 's'} sent to the verified recipients.'
-                : '${result.sent} sent; ${result.failed} blocked or failed. $failureMessages',
+                ? '${result.sent} result${result.sent == 1 ? '' : 's'} accepted by WhatsApp. Check Send history for delivery.'
+                : '${result.sent} accepted by WhatsApp; ${result.failed} blocked or failed. $failureMessages',
           ),
         ),
       );
@@ -298,6 +318,52 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
       }
     } finally {
       if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  Future<void> _retryAttempt(WhatsAppSendAttempt attempt) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Retry WhatsApp delivery?'),
+        content: Text(
+          'Retry ${attempt.labNumber} to ${attempt.recipientName} (${attempt.destination})? A new secure result link will be created. Do not retry an accepted message immediately because Meta may still deliver it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Retry'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await ref
+          .read(resultsRepositoryProvider)
+          .retryWhatsAppAttempt(attempt.id);
+      ref.invalidate(whatsappAttemptsProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Retry accepted by WhatsApp. Delivery status will update here.',
+            ),
+          ),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(apiErrorMessage(error))),
+        );
+      }
     }
   }
 }
@@ -473,7 +539,7 @@ class _EmptyVisits extends StatelessWidget {
             hasSearch
                 ? 'No results match your search.'
                 : completed
-                    ? 'No completed results found.'
+                    ? 'No completed results have one valid doctor number yet.'
                     : 'No results found.',
           ),
         ],
@@ -649,6 +715,188 @@ class _CompletedActions extends StatelessWidget {
                     : 'Send via WhatsApp ($selected)',
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WhatsAppSendHistory extends StatelessWidget {
+  const _WhatsAppSendHistory({
+    required this.attempts,
+    required this.onRefresh,
+    required this.onRetry,
+  });
+
+  final AsyncValue<List<WhatsAppSendAttempt>> attempts;
+  final VoidCallback onRefresh;
+  final ValueChanged<WhatsAppSendAttempt> onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return attempts.when(
+      loading: () => const _LoadingVisits(),
+      error: (error, _) => _VisitsError(
+        message: apiErrorMessage(error),
+        onRetry: onRefresh,
+      ),
+      data: (items) {
+        final successful = items.where((item) => item.isSuccessful).length;
+        final failed = items.where((item) => item.isFailed).length;
+        final pending = items.where((item) => item.isPending).length;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      'WhatsApp delivery tracking',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Accepted means Meta received the request. Delivered and read are confirmed by the webhook.',
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _HistoryCount(label: 'Successful', count: successful),
+                        _HistoryCount(label: 'Pending', count: pending),
+                        _HistoryCount(label: 'Failed', count: failed),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton.icon(
+                      onPressed: onRefresh,
+                      icon: const Icon(Icons.refresh_rounded),
+                      label: const Text('Refresh delivery statuses'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            if (items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 28),
+                child: Text(
+                  'No WhatsApp send attempts have been recorded yet.',
+                  textAlign: TextAlign.center,
+                ),
+              )
+            else
+              for (final attempt in items)
+                _WhatsAppAttemptCard(
+                  attempt: attempt,
+                  onRetry: attempt.canRetry ? () => onRetry(attempt) : null,
+                ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HistoryCount extends StatelessWidget {
+  const _HistoryCount({required this.label, required this.count});
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: InterpathColors.softBlue,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Text('$label: $count'),
+    );
+  }
+}
+
+class _WhatsAppAttemptCard extends StatelessWidget {
+  const _WhatsAppAttemptCard({required this.attempt, this.onRetry});
+  final WhatsAppSendAttempt attempt;
+  final VoidCallback? onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusColor = attempt.isSuccessful
+        ? InterpathColors.successGreen
+        : attempt.isFailed
+            ? Theme.of(context).colorScheme.error
+            : InterpathColors.primaryBlue;
+    final timestamp = attempt.statusTimestamp ?? attempt.createdAt;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    attempt.labNumber,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 9,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    attempt.status.toUpperCase(),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text('${attempt.recipientName} • ${attempt.destination}'),
+            Text(
+              DateFormat('d MMM yyyy, HH:mm').format(timestamp.toLocal()),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if ((attempt.errorMessage ?? '').isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                attempt.errorMessage!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
+            if (onRetry != null) ...[
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Retry this result'),
+              ),
+            ] else if (attempt.isPending) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Waiting for Meta delivery confirmation…',
+                style: TextStyle(color: InterpathColors.primaryBlue),
+              ),
+            ],
           ],
         ),
       ),

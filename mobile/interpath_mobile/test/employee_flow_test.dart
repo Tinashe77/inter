@@ -27,6 +27,40 @@ void main() {
     expect(result.items.last.message, 'Recipient unavailable');
   });
 
+  test('WhatsApp history distinguishes delivered, pending and failed', () {
+    final delivered = WhatsAppSendAttempt.fromJson(const {
+      'id': '1',
+      'labNumber': 'LAB-1',
+      'recipientName': 'Dr Test',
+      'destination': '+26377•••456',
+      'status': 'delivered',
+      'createdAt': '2026-08-03T12:00:00.000Z',
+    });
+    final pending = WhatsAppSendAttempt.fromJson(const {
+      'id': '2',
+      'labNumber': 'LAB-2',
+      'recipientName': 'Clinic Test',
+      'destination': '+26371•••456',
+      'status': 'accepted',
+      'createdAt': '2026-08-03T12:00:00.000Z',
+    });
+    final failed = WhatsAppSendAttempt.fromJson(const {
+      'id': '3',
+      'labNumber': 'LAB-3',
+      'recipientName': 'Dr Failed',
+      'destination': '+26378•••456',
+      'status': 'failed',
+      'createdAt': '2026-08-03T12:00:00.000Z',
+      'errorMessage': 'Recipient unavailable',
+    });
+
+    expect(delivered.isSuccessful, isTrue);
+    expect(delivered.canRetry, isFalse);
+    expect(pending.isPending, isTrue);
+    expect(failed.isFailed, isTrue);
+    expect(failed.canRetry, isTrue);
+  });
+
   test('completed visit includes an automatically resolved doctor recipient',
       () {
     final visit = Visit.fromJson(const {

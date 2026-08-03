@@ -18,6 +18,92 @@ const bulkSendSchema = z.object({
   labNumbers: z.array(z.string().min(1)).min(1).max(50)
 });
 
+resultRouter.get('/whatsapp-attempts', requireAuth(['Employee']), async (req, res, next) => {
+  try {
+    const createdBy = userAuditId(req.user);
+    const messages = await WhatsAppMessage.find({ createdBy })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+    res.json({
+      attempts: messages.map(serializeWhatsAppAttempt)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+resultRouter.post('/whatsapp-attempts/:attemptId/retry', requireAuth(['Employee']), async (req, res, next) => {
+  try {
+    const attemptId = String(req.params.attemptId || '');
+    if (!/^[a-f\d]{24}$/i.test(attemptId)) {
+      return res.status(404).json({ code: 'ATTEMPT_NOT_FOUND', message: 'The WhatsApp attempt was not found.' });
+    }
+    const attempt = await WhatsAppMessage.findOne({
+      _id: attemptId,
+      createdBy: userAuditId(req.user)
+    });
+    if (!attempt) {
+      return res.status(404).json({ code: 'ATTEMPT_NOT_FOUND', message: 'The WhatsApp attempt was not found.' });
+    }
+    if (['delivered', 'read'].includes(String(attempt.status).toLowerCase())) {
+      return res.status(409).json({ code: 'ALREADY_DELIVERED', message: 'This result was already delivered and cannot be retried.' });
+    }
+    if (['accepted', 'sent'].includes(String(attempt.status).toLowerCase())
+      && Date.now() - new Date(attempt.createdAt).getTime() < 2 * 60 * 1000) {
+      return res.status(409).json({ code: 'DELIVERY_PENDING', message: 'WhatsApp is still processing this message. Wait two minutes before retrying.' });
+    }
+    if (!attempt.labNumber || !attempt.recipientWaId) {
+      return res.status(409).json({ code: 'RETRY_UNAVAILABLE', message: 'This attempt does not contain a complete result-recipient pairing.' });
+    }
+
+    const { shareUrl } = await createResultShareLink(req, {
+      labNumber: attempt.labNumber,
+      whatsappSafe: true
+    });
+    let whatsapp;
+    try {
+      whatsapp = await sendWhatsAppResultTemplate({
+        to: attempt.recipientWaId,
+        recipientName: attempt.recipientName || 'Doctor',
+        labNumber: attempt.labNumber,
+        shareUrl
+      });
+    } catch (error) {
+      await recordWhatsAppFailure({
+        labNumber: attempt.labNumber,
+        destination: attempt.recipientWaId,
+        recipientName: attempt.recipientName || 'Doctor',
+        shareUrl,
+        createdBy: userAuditId(req.user),
+        source: 'retry',
+        retryOfMessageId: attempt.metaMessageId,
+        error
+      });
+      throw error;
+    }
+
+    const retryAttempt = await recordWhatsAppMessage({
+        whatsapp,
+        labNumber: attempt.labNumber,
+        recipientName: attempt.recipientName || 'Doctor',
+        shareUrl,
+        createdBy: userAuditId(req.user),
+        source: 'retry',
+        retryOfMessageId: attempt.metaMessageId
+    });
+    await writeAudit(req, 'WHATSAPP_SHARE', {
+        labNumber: attempt.labNumber,
+        channel: 'meta-cloud-api-retry',
+        phoneNumber: attempt.recipientWaId,
+        messageId: whatsapp.messageId
+    });
+    res.json({ status: 'accepted', attempt: serializeWhatsAppAttempt(retryAttempt.toObject()) });
+  } catch (error) {
+    next(error);
+  }
+});
+
 function normalizeResults(rows = []) {
   const metadata = {
     resultsToFollow: false,
@@ -79,38 +165,54 @@ resultRouter.post('/bulk-whatsapp/send', requireAuth(['Employee']), async (req, 
         return bulkFailure(labNumber, 'RECIPIENT_UNAVAILABLE', 'A valid doctor mobile number with country code could not be resolved.');
       }
 
+      const recipientName = visit.Doctor || visit.RecipientClinicName || 'Doctor';
+      let shareUrl = '';
+      let whatsapp;
       try {
-        const { shareUrl } = await createResultShareLink(req, {
+        ({ shareUrl } = await createResultShareLink(req, {
           labNumber: visit.LabNumber,
           whatsappSafe: true
-        });
-        const recipientName = visit.Doctor || visit.RecipientClinicName || 'Doctor';
-        const whatsapp = await sendWhatsAppResultTemplate({
+        }));
+        whatsapp = await sendWhatsAppResultTemplate({
           to: visit.DoctorPhoneNumber,
           recipientName,
           labNumber: visit.LabNumber,
           shareUrl
         });
-        await recordWhatsAppMessage({
-          whatsapp,
-          labNumber: visit.LabNumber
-        });
-        await writeAudit(req, 'WHATSAPP_SHARE', {
-          labNumber: visit.LabNumber,
-          channel: 'meta-cloud-api-bulk',
-          phoneNumber: visit.DoctorPhoneNumber,
-          messageId: whatsapp.messageId
-        });
-        return {
-          labNumber: visit.LabNumber,
-          status: 'sent',
-          recipientName,
-          destination: visit.DoctorPhoneNumber,
-          messageId: whatsapp.messageId
-        };
       } catch (error) {
+        await recordWhatsAppFailure({
+          labNumber: visit.LabNumber,
+          destination: visit.DoctorPhoneNumber,
+          recipientName,
+          shareUrl,
+          createdBy: userAuditId(req.user),
+          source: 'bulk',
+          error
+        });
         return bulkFailure(visit.LabNumber, error.code || 'WHATSAPP_SEND_FAILED', error.message);
       }
+
+      await recordWhatsAppMessage({
+        whatsapp,
+        labNumber: visit.LabNumber,
+        recipientName,
+        shareUrl,
+        createdBy: userAuditId(req.user),
+        source: 'bulk'
+      });
+      await writeAudit(req, 'WHATSAPP_SHARE', {
+        labNumber: visit.LabNumber,
+        channel: 'meta-cloud-api-bulk',
+        phoneNumber: visit.DoctorPhoneNumber,
+        messageId: whatsapp.messageId
+      });
+      return {
+        labNumber: visit.LabNumber,
+        status: 'sent',
+        recipientName,
+        destination: visit.DoctorPhoneNumber,
+        messageId: whatsapp.messageId
+      };
     });
 
     const sent = results.filter((result) => result.status === 'sent').length;
@@ -362,14 +464,35 @@ resultRouter.post('/:labNumber/send-whatsapp', requireAuth(['Patient', 'Clinic_D
     const { labNumber, shareUrl } = await createResultShareLink(req, { whatsappSafe: true });
     const destination = req.body?.phoneNumber;
     const patientName = req.body?.patientName || 'the patient';
-    const whatsapp = await sendWhatsAppResultTemplate({
-      to: destination,
-      patientName,
-      labNumber,
-      shareUrl
-    });
+    let whatsapp;
+    try {
+      whatsapp = await sendWhatsAppResultTemplate({
+        to: destination,
+        patientName,
+        labNumber,
+        shareUrl
+      });
+    } catch (error) {
+      await recordWhatsAppFailure({
+        labNumber,
+        destination,
+        recipientName: patientName,
+        shareUrl,
+        createdBy: userAuditId(req.user),
+        source: 'single',
+        error
+      });
+      throw error;
+    }
 
-    await recordWhatsAppMessage({ whatsapp, labNumber });
+    await recordWhatsAppMessage({
+      whatsapp,
+      labNumber,
+      recipientName: patientName,
+      shareUrl,
+      createdBy: userAuditId(req.user),
+      source: 'single'
+    });
 
     await writeAudit(req, 'WHATSAPP_SHARE', {
       labNumber,
@@ -410,20 +533,84 @@ async function createResultShareLink(req, options = {}) {
   };
 }
 
-async function recordWhatsAppMessage({ whatsapp, labNumber }) {
-  if (!whatsapp.messageId) return;
-  await WhatsAppMessage.findOneAndUpdate(
+async function recordWhatsAppMessage({
+  whatsapp,
+  labNumber,
+  recipientName,
+  shareUrl,
+  createdBy,
+  source,
+  retryOfMessageId
+}) {
+  if (!whatsapp.messageId) return null;
+  return WhatsAppMessage.findOneAndUpdate(
     { metaMessageId: whatsapp.messageId },
     {
       $set: {
         recipientWaId: whatsapp.contactWaId,
+        recipientName,
         labNumber,
+        shareUrl,
+        createdBy,
+        source,
+        retryOfMessageId,
         status: 'accepted',
         statusTimestamp: new Date()
       }
     },
     { upsert: true, new: true }
   );
+}
+
+function recordWhatsAppFailure({
+  labNumber,
+  destination,
+  recipientName,
+  shareUrl,
+  createdBy,
+  source,
+  retryOfMessageId,
+  error
+}) {
+  return WhatsAppMessage.create({
+    metaMessageId: `local:${crypto.randomUUID()}`,
+    recipientWaId: String(destination || '').replace(/\D/g, ''),
+    recipientName,
+    labNumber,
+    shareUrl,
+    createdBy,
+    source,
+    retryOfMessageId,
+    status: 'failed',
+    statusTimestamp: new Date(),
+    errorCode: error.code || 'WHATSAPP_SEND_FAILED',
+    errorMessage: error.message || 'WhatsApp could not send this result.'
+  });
+}
+
+function serializeWhatsAppAttempt(message) {
+  return {
+    id: String(message._id),
+    labNumber: message.labNumber || '',
+    recipientName: message.recipientName || 'Doctor',
+    destination: maskPhoneNumber(message.recipientWaId),
+    status: message.status || 'accepted',
+    statusTimestamp: message.statusTimestamp || message.updatedAt,
+    errorCode: message.errorCode || null,
+    errorMessage: message.errorMessage || null,
+    source: message.source || 'single',
+    createdAt: message.createdAt
+  };
+}
+
+function maskPhoneNumber(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (digits.length < 7) return digits;
+  return `+${digits.slice(0, 5)}•••${digits.slice(-3)}`;
+}
+
+function userAuditId(user) {
+  return String(user?.id || user?.username || '').trim();
 }
 
 function normalizeLabNumber(value) {

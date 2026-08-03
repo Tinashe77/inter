@@ -54,6 +54,81 @@ class ResultsRepository {
     );
     return BulkWhatsAppSendResult.fromJson(response.data ?? const {});
   }
+
+  Future<List<WhatsAppSendAttempt>> listWhatsAppAttempts() async {
+    final dio = ref.read(dioProvider);
+    final response = await dio.get<Map<String, dynamic>>(
+      '/api/results/whatsapp-attempts',
+    );
+    final rows = response.data?['attempts'];
+    if (rows is! List) return const [];
+    return rows
+        .whereType<Map>()
+        .map(
+          (row) => WhatsAppSendAttempt.fromJson(
+            Map<String, dynamic>.from(row),
+          ),
+        )
+        .toList();
+  }
+
+  Future<WhatsAppSendAttempt> retryWhatsAppAttempt(String attemptId) async {
+    final dio = ref.read(dioProvider);
+    final response = await dio.post<Map<String, dynamic>>(
+      '/api/results/whatsapp-attempts/${Uri.encodeComponent(attemptId)}/retry',
+    );
+    return WhatsAppSendAttempt.fromJson(
+      Map<String, dynamic>.from(response.data?['attempt'] as Map? ?? const {}),
+    );
+  }
+}
+
+class WhatsAppSendAttempt {
+  const WhatsAppSendAttempt({
+    required this.id,
+    required this.labNumber,
+    required this.recipientName,
+    required this.destination,
+    required this.status,
+    required this.createdAt,
+    this.statusTimestamp,
+    this.errorMessage,
+    this.source,
+  });
+
+  final String id;
+  final String labNumber;
+  final String recipientName;
+  final String destination;
+  final String status;
+  final DateTime createdAt;
+  final DateTime? statusTimestamp;
+  final String? errorMessage;
+  final String? source;
+
+  bool get isSuccessful => const {'delivered', 'read'}.contains(status);
+  bool get isFailed => status == 'failed';
+  bool get isPending => const {'accepted', 'sent'}.contains(status);
+  bool get canRetry =>
+      isFailed ||
+      (isPending && DateTime.now().difference(createdAt).inMinutes >= 2);
+
+  factory WhatsAppSendAttempt.fromJson(Map<String, dynamic> json) {
+    return WhatsAppSendAttempt(
+      id: json['id']?.toString() ?? '',
+      labNumber: json['labNumber']?.toString() ?? '',
+      recipientName: json['recipientName']?.toString() ?? 'Doctor',
+      destination: json['destination']?.toString() ?? '',
+      status: json['status']?.toString().toLowerCase() ?? 'accepted',
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      statusTimestamp: DateTime.tryParse(
+        json['statusTimestamp']?.toString() ?? '',
+      ),
+      errorMessage: json['errorMessage']?.toString(),
+      source: json['source']?.toString(),
+    );
+  }
 }
 
 class BulkWhatsAppSendResult {

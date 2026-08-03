@@ -3,7 +3,12 @@ import mongoose from 'mongoose';
 const whatsappMessageSchema = new mongoose.Schema({
   metaMessageId: { type: String, required: true, unique: true, index: true },
   recipientWaId: String,
+  recipientName: String,
   labNumber: String,
+  shareUrl: String,
+  createdBy: { type: String, index: true },
+  source: { type: String, enum: ['single', 'bulk', 'retry'], default: 'single' },
+  retryOfMessageId: String,
   status: String,
   statusTimestamp: Date,
   conversationId: String,
