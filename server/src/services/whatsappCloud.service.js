@@ -44,14 +44,11 @@ export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, s
         template: {
           name: config.templateName,
           language: { code: config.templateLanguage },
-          components: [{
-            type: 'body',
-            parameters: [
-              { type: 'text', text: patientName || 'Patient' },
-              { type: 'text', text: labNumber },
-              { type: 'text', text: shareUrl }
-            ]
-          }]
+          components: buildResultTemplateComponents({
+            patientName,
+            labNumber,
+            shareUrl
+          })
         }
       },
       {
@@ -71,6 +68,24 @@ export async function sendWhatsAppResultTemplate({ to, patientName, labNumber, s
     contactWaId: response.data?.contacts?.[0]?.wa_id || destination,
     response: response.data
   };
+}
+
+export function buildResultTemplateComponents({ patientName, labNumber, shareUrl }) {
+  const displayName = String(patientName || 'Patient').trim() || 'Patient';
+  return [
+    {
+      type: 'header',
+      parameters: [{ type: 'text', text: displayName }]
+    },
+    {
+      type: 'body',
+      parameters: [
+        { type: 'text', text: displayName },
+        { type: 'text', text: String(labNumber || '') },
+        { type: 'text', text: String(shareUrl || '') }
+      ]
+    }
+  ];
 }
 
 function toWhatsAppError(cause) {
@@ -107,7 +122,7 @@ function whatsAppErrorMessage(metaCode, metaSubcode) {
     return `WhatsApp has temporarily limited message delivery. Please retry later.${reference}`;
   }
   if (metaCode === 132000) {
-    return `The approved WhatsApp template does not have the three body variables expected by the app.${reference}`;
+    return `The WhatsApp template parameter count does not match the approved header or body.${reference}`;
   }
   if (metaCode === 132001) {
     return `The configured WhatsApp template name or language does not match an approved template.${reference}`;
