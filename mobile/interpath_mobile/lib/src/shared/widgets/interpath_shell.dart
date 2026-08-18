@@ -7,12 +7,14 @@ class InterpathShell extends StatelessWidget {
     required this.title,
     required this.child,
     this.actions,
+    this.overlay,
     super.key,
   });
 
   final String title;
   final Widget child;
   final List<Widget>? actions;
+  final Widget? overlay;
 
   @override
   Widget build(BuildContext context) {
@@ -39,9 +41,25 @@ class InterpathShell extends StatelessWidget {
         centerTitle: false,
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(18, 8, 18, 28),
-          children: [child],
+        child: Stack(
+          children: [
+            ListView(
+              padding: EdgeInsets.fromLTRB(
+                18,
+                8,
+                18,
+                overlay == null ? 28 : 148,
+              ),
+              children: [child],
+            ),
+            if (overlay != null)
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 14,
+                child: IgnorePointer(child: overlay),
+              ),
+          ],
         ),
       ),
     );

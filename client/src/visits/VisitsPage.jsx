@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock3, History, MapPin, MessageCircle, RefreshCw, RotateCcw, Search, Send, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock3, History, Loader2, MapPin, MessageCircle, RefreshCw, RotateCcw, Search, Send, ShieldCheck, X, XCircle } from 'lucide-react';
 import { http } from '../api/http.js';
 import { useAuthStore } from '../auth/authStore.js';
 import { StatusBadge } from '../components/StatusBadge.jsx';
@@ -25,6 +25,8 @@ export function VisitsPage() {
   const [activeTab, setActiveTab] = useState('results');
   const [selected, setSelected] = useState(new Set());
   const [sending, setSending] = useState(false);
+  const [processingCount, setProcessingCount] = useState(0);
+  const [reviewVisits, setReviewVisits] = useState([]);
   const [sendSummary, setSendSummary] = useState(null);
   const [attempts, setAttempts] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -109,14 +111,17 @@ export function VisitsPage() {
     });
   }
 
-  async function sendBulk() {
+  function openBulkReview() {
     const chosen = selectedEligible;
     if (!chosen.length) return;
-    const pairingList = chosen.map((visit) => `${visit.LabNumber} → ${visit.Doctor || visit.RecipientClinicName || 'Doctor'} (${maskPhone(visit.DoctorPhoneNumber)})`).join('\n');
-    const approved = window.confirm(`Approve ${chosen.length} result${chosen.length === 1 ? '' : 's'} for WhatsApp sending?\n\n${pairingList}\n\nThe server will verify every result-recipient pairing again before sending.`);
-    if (!approved) return;
+    setReviewVisits(chosen);
+  }
 
+  async function sendBulk(chosen) {
+    if (!chosen.length || sending) return;
+    setReviewVisits([]);
     setSending(true);
+    setProcessingCount(chosen.length);
     setSendSummary(null);
     try {
       const { data } = await http.post('/results/bulk-whatsapp/send', {
@@ -132,6 +137,7 @@ export function VisitsPage() {
       setSendSummary({ status: 'failed', sent: 0, failed: chosen.length, results: [], message: err.message });
     } finally {
       setSending(false);
+      setProcessingCount(0);
     }
   }
 
@@ -185,7 +191,7 @@ export function VisitsPage() {
         <section className="panel space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <label className="flex cursor-pointer items-center gap-3"><input className="h-5 w-5 accent-interpath-blue" type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!bulkEligible.length} /><span><strong className="font-medium">Select all valid</strong><span className="block text-xs text-slate-500">{bulkEligible.length} completed result{bulkEligible.length === 1 ? '' : 's'} ready</span></span></label>
-            <button className="btn-primary" onClick={sendBulk} disabled={sending || selectedEligible.length === 0}><Send size={16} />{sending ? 'Sending approved results…' : `Send via WhatsApp (${selectedEligible.length})`}</button>
+            <button className="btn-primary" onClick={openBulkReview} disabled={sending || selectedEligible.length === 0}><Send size={16} />{sending ? 'Processing results…' : `Send via WhatsApp (${selectedEligible.length})`}</button>
           </div>
           <p className="text-xs text-slate-500">Only completed results with exactly one server-validated doctor number appear here. Each recipient gets a separate secure report link through the official WhatsApp Cloud API.</p>
         </section>
@@ -208,7 +214,67 @@ export function VisitsPage() {
       )}
 
       {activeTab === 'history' && <SendHistory attempts={attempts} loading={historyLoading} error={historyError} retryingId={retryingId} onRetry={retryAttempt} />}
+      {reviewVisits.length > 0 && <BulkSendReviewModal visits={reviewVisits} onClose={() => setReviewVisits([])} onApprove={() => sendBulk(reviewVisits)} />}
+      {sending && <SendingProgress count={processingCount} />}
     </main>
+  );
+}
+
+function BulkSendReviewModal({ visits, onClose, onApprove }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 p-3 backdrop-blur-sm sm:items-center sm:p-6" role="presentation" onMouseDown={onClose}>
+      <section className="w-full max-w-xl overflow-hidden rounded-3xl border border-white/70 bg-white/95 shadow-2xl shadow-blue-950/25" role="dialog" aria-modal="true" aria-labelledby="bulk-review-title" onMouseDown={(event) => event.stopPropagation()}>
+        <header className="relative overflow-hidden border-b border-blue-100 px-5 py-5 sm:px-6">
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-50 via-white to-cyan-50" />
+          <div className="relative flex items-start gap-4">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-interpath-blue to-blue-500 text-white shadow-lg shadow-blue-500/25"><ShieldCheck size={24} /></span>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-interpath-blue">Secure approval</p>
+              <h3 id="bulk-review-title" className="mt-1 text-xl font-medium text-slate-900">Review {visits.length} WhatsApp result{visits.length === 1 ? '' : 's'}</h3>
+              <p className="mt-1 text-sm leading-6 text-slate-600">Confirm each result is paired with the correct doctor before sending.</p>
+            </div>
+            <button type="button" onClick={onClose} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/80 text-slate-500 shadow-sm transition hover:bg-white hover:text-slate-900" aria-label="Close approval"><X size={19} /></button>
+          </div>
+        </header>
+
+        <div className="max-h-[48vh] space-y-2 overflow-y-auto px-5 py-4 sm:px-6">
+          {visits.map((visit) => (
+            <article key={visit.LabNumber} className="rounded-2xl border border-blue-100 bg-gradient-to-r from-white to-blue-50/60 p-4">
+              <div className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600"><CheckCircle2 size={18} /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2"><p className="truncate font-medium text-slate-900">{visit.PatientName || 'Unnamed patient'}</p><span className="rounded-full bg-blue-100 px-2.5 py-1 text-[11px] font-medium text-interpath-blue">{visit.LabNumber}</span></div>
+                  <p className="mt-2 text-sm text-slate-700">{visit.Doctor || visit.RecipientClinicName || 'Doctor'}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">WhatsApp {maskPhone(visit.DoctorPhoneNumber)}</p>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+
+        <footer className="border-t border-blue-100 bg-slate-50/80 px-5 py-4 sm:px-6">
+          <p className="mb-4 text-xs leading-5 text-slate-500">The server will verify every pairing again and create a separate secure report link for each recipient.</p>
+          <div className="grid gap-2 sm:grid-cols-[1fr_1.5fr]">
+            <button type="button" className="btn-secondary rounded-2xl" onClick={onClose}>Cancel</button>
+            <button type="button" className="btn-primary rounded-2xl" onClick={onApprove}><Send size={17} />Approve and send</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  );
+}
+
+function SendingProgress({ count }) {
+  return (
+    <aside className="pointer-events-none fixed bottom-5 left-3 right-3 z-40 sm:left-auto sm:right-6 sm:w-[380px]" role="status" aria-live="polite">
+      <div className="overflow-hidden rounded-2xl border border-white/70 bg-slate-950/90 p-4 text-white shadow-2xl shadow-blue-950/30 backdrop-blur-xl">
+        <div className="flex items-center gap-3">
+          <span className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/10 text-cyan-300"><Loader2 className="animate-spin" size={22} /><span className="absolute inset-0 animate-ping rounded-xl border border-cyan-300/20" /></span>
+          <div className="min-w-0 flex-1"><p className="font-medium">Processing {count} result{count === 1 ? '' : 's'}</p><p className="mt-1 text-xs leading-5 text-slate-300">Secure links are being prepared and submitted to WhatsApp. You can keep scrolling and using the app.</p></div>
+        </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10"><span className="block h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-blue-400 via-cyan-300 to-blue-400" /></div>
+      </div>
+    </aside>
   );
 }
 

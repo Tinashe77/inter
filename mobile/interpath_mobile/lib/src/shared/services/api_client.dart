@@ -13,8 +13,8 @@ final dioProvider = Provider<Dio>((ref) {
     BaseOptions(
       baseUrl: ApiConfig.baseUrl,
       connectTimeout: const Duration(seconds: 20),
-      // SLIS list queries can legitimately take longer than 30 seconds.
-      receiveTimeout: const Duration(seconds: 70),
+      // Match the backend's extended window for slow historical SLIS lists.
+      receiveTimeout: const Duration(seconds: 130),
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',

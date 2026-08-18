@@ -147,7 +147,8 @@ resultRouter.post('/bulk-whatsapp/send', requireAuth(['Employee']), async (req, 
     const visits = await fetchEmployeeVisits({
       token: req.user.token,
       date: body.date,
-      branch: body.branch
+      branch: body.branch,
+      forceRefresh: true
     });
     const visitsByLabNumber = new Map(
       visits.map((visit) => [normalizeLabNumber(visit.LabNumber), visit])

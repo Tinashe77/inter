@@ -41,6 +41,7 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
   int _activeTab = 0;
   final Set<String> _selectedLabNumbers = {};
   bool _sending = false;
+  int _sendingCount = 0;
 
   @override
   void dispose() {
@@ -54,6 +55,7 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
 
     return InterpathShell(
       title: 'Results',
+      overlay: _sending ? _SendingProgress(count: _sendingCount) : null,
       child: settingsState.when(
         loading: () => const _LoadingVisits(),
         error: (_, __) => const Text('Unable to load visit preferences.'),
@@ -284,7 +286,10 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
     );
     if (approved != true || !mounted) return;
 
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+      _sendingCount = visits.length;
+    });
     try {
       final result =
           await ref.read(resultsRepositoryProvider).sendBulkWhatsAppResults(
@@ -317,7 +322,12 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _sending = false);
+      if (mounted) {
+        setState(() {
+          _sending = false;
+          _sendingCount = 0;
+        });
+      }
     }
   }
 
@@ -365,6 +375,78 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
         );
       }
     }
+  }
+}
+
+class _SendingProgress extends StatelessWidget {
+  const _SendingProgress({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xF2181C38), Color(0xF21B2457)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x43060B2A),
+            blurRadius: 28,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(15),
+            ),
+            child: const CircularProgressIndicator(
+              strokeWidth: 2.5,
+              color: Color(0xFF67E8F9),
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Processing $count result${count == 1 ? '' : 's'}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Preparing secure links and sending to WhatsApp. You can keep scrolling and using the app.',
+                  style: TextStyle(
+                    color: Color(0xFFCBD5E1),
+                    fontSize: 12,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
