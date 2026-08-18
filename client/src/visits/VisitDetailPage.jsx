@@ -15,8 +15,7 @@ export function VisitDetailPage() {
   const [shareLoading, setShareLoading] = useState(false);
   const [shareError, setShareError] = useState('');
   const [shareDraft, setShareDraft] = useState(() => createEmptyShareDraft());
-  const [gupshupLoading, setGupshupLoading] = useState(false);
-  const [gupshupMessage, setGupshupMessage] = useState('');
+  const [whatsappMessage, setWhatsappMessage] = useState('');
   const [covidMessage, setCovidMessage] = useState('');
 
   useEffect(() => {
@@ -105,6 +104,21 @@ export function VisitDetailPage() {
 
     try {
       setShareLoading(true);
+      if (shareDraft.channel === 'whatsapp') {
+        const sends = await Promise.allSettled(phoneNumbers.map((phone) => http.post(`/results/${labNumber}/send-whatsapp`, {
+          phoneNumber: phone,
+          patientName: doctorName || 'Doctor'
+        })));
+        const accepted = sends.filter((result) => result.status === 'fulfilled').length;
+        const failures = sends.filter((result) => result.status === 'rejected');
+        setShareOpen(false);
+        setShareLoading(false);
+        setWhatsappMessage(failures.length === 0
+          ? `${accepted} WhatsApp message${accepted === 1 ? '' : 's'} accepted by Meta. Check Send history for confirmed delivery.`
+          : `${accepted} accepted by Meta; ${failures.length} failed. ${failures.map((result) => result.reason?.message || 'WhatsApp send failed.').join(' ')}`);
+        return;
+      }
+
       const { data } = await http.post(`/results/${labNumber}/share-link`, { channel: shareDraft.channel, recipientCount: shareDraft.channel === 'whatsapp' ? phoneNumbers.length : 1 });
       const pdfLink = data.shareUrl;
       const greeting = doctorName ? `Good day ${doctorName}` : 'Good day Doctor';
@@ -112,13 +126,6 @@ export function VisitDetailPage() {
 
       setShareOpen(false);
       setShareLoading(false);
-
-      if (shareDraft.channel === 'whatsapp') {
-        phoneNumbers.forEach((phone) => {
-          window.open(`https://wa.me/${phone.replace(/\D/g, '')}?text=${encodeURIComponent(text)}`, '_blank', 'noopener,noreferrer');
-        });
-        return;
-      }
 
       const subject = `Interpath lab results for ${displayVisit?.PatientName || labNumber}`;
       window.location.href = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
@@ -147,21 +154,6 @@ export function VisitDetailPage() {
       ...current,
       phoneNumbers: current.phoneNumbers.map((phone, phoneIndex) => phoneIndex === index ? value : phone)
     }));
-  }
-
-  async function sendViaGupshup() {
-    setGupshupLoading(true);
-    setGupshupMessage('');
-    try {
-      const { data } = await http.post(`/results/${labNumber}/send-gupshup-whatsapp`, {
-        patientName: displayVisit?.PatientName || ''
-      });
-      setGupshupMessage(`Gupshup request accepted for +${data.destination}.`);
-    } catch (err) {
-      setGupshupMessage(err.message);
-    } finally {
-      setGupshupLoading(false);
-    }
   }
 
   async function requestCovidCertificate() {
@@ -224,11 +216,7 @@ export function VisitDetailPage() {
           )}
           <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('whatsapp')} disabled={!payload?.pdfGenerated}>
             <MessageCircle size={16} />
-            Share via WhatsApp
-          </button>
-          <button className="btn-secondary w-full sm:w-auto" onClick={sendViaGupshup} disabled={!payload?.pdfGenerated || gupshupLoading}>
-            <MessageCircle size={16} />
-            {gupshupLoading ? 'Sending...' : 'Send via Gupshup'}
+            Send via official WhatsApp API
           </button>
           <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('email')} disabled={!payload?.pdfGenerated}>
             <Mail size={16} />
@@ -248,7 +236,7 @@ export function VisitDetailPage() {
         </section>
       )}
       {covidMessage && <p className="rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">{covidMessage}</p>}
-      {gupshupMessage && <p className="rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">{gupshupMessage}</p>}
+      {whatsappMessage && <p className="rounded-lg bg-white p-3 text-sm text-slate-700 shadow-sm">{whatsappMessage}</p>}
       {shareOpen && (
         <section className="fixed inset-0 z-30 flex items-end justify-center bg-slate-950/50 px-3 pb-3 sm:items-center sm:px-4 sm:pb-0">
           <div className="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
@@ -311,7 +299,7 @@ export function VisitDetailPage() {
               <button className="btn-secondary" onClick={() => setShareOpen(false)}>Cancel</button>
               {!shareDraft.isEditing && <button className="btn-secondary" onClick={() => setShareDraft((current) => ({ ...current, isEditing: true }))}>No, edit details</button>}
               <button className="btn-primary" onClick={completeShare} disabled={shareLoading}>
-                {shareDraft.channel === 'email' ? 'Open Email' : 'Open WhatsApp'}
+                {shareDraft.channel === 'email' ? 'Open Email' : 'Approve and send'}
               </button>
             </div>
           </div>

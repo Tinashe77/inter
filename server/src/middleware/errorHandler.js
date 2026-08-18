@@ -9,6 +9,13 @@ export function createHttpError(status, code, message, details) {
 }
 
 export function errorHandler(error, _req, res, _next) {
+  if (error.code === 'ECONNABORTED' || /timeout of \d+ms exceeded/i.test(error.message || '')) {
+    return res.status(504).json({
+      code: 'SLIS_TIMEOUT',
+      message: 'The laboratory system is taking longer than expected. Please retry this date in a moment.'
+    });
+  }
+
   if (error.response) {
     const status = error.response.status;
     const slisMessage = error.response.data?.response || error.response.data?.Message || error.response.data?.message;

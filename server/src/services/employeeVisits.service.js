@@ -6,8 +6,10 @@ import { parseSlisListResponse } from '../utils/slisResponse.js';
 export async function fetchEmployeeVisits({ token, date, branch = 'ALL' }) {
   const normalizedDate = normalizeDateForSlis(date);
   const normalizedBranch = encodeURIComponent(branch || 'ALL');
+  const timeout = Number(process.env.SLIS_VISITS_TIMEOUT_MS || 120000);
   const rows = await slisGet(`/api/List/${normalizedBranch}/${normalizedDate}`, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: { Authorization: `Bearer ${token}` },
+    timeout
   });
 
   if (isEmptyListFailure(rows)) return [];
