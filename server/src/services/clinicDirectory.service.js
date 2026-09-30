@@ -1,25 +1,47 @@
 import { slisGet } from './slisApi.service.js';
 
 const clinicsEndpoint = process.env.SLIS_CLINICS_URL || 'https://www.interpathresults.com/slismob/api/clinics/na';
-const cacheTtlMs = 10 * 60 * 1000;
+const cacheTtlMs = Number(process.env.SLIS_CLINICS_CACHE_TTL_MS || 30 * 60 * 1000);
+const staleTtlMs = Number(process.env.SLIS_CLINICS_STALE_TTL_MS || 6 * 60 * 60 * 1000);
 let cachedDirectory = null;
 let cachedAt = 0;
+let directoryInFlight = null;
 
 export async function getClinicDirectory(token) {
-  if (cachedDirectory && Date.now() - cachedAt < cacheTtlMs) {
+  const age = Date.now() - cachedAt;
+  if (cachedDirectory && age < cacheTtlMs) {
     return cachedDirectory;
   }
 
-  const data = await slisGet(clinicsEndpoint, {
+  if (cachedDirectory && age < staleTtlMs) {
+    void refreshClinicDirectory(token).catch(() => {});
+    return cachedDirectory;
+  }
+
+  return refreshClinicDirectory(token);
+}
+
+function refreshClinicDirectory(token) {
+  if (directoryInFlight) return directoryInFlight;
+
+  directoryInFlight = slisGet(clinicsEndpoint, {
     headers: { Authorization: `Bearer ${token}` }
+  }).then((data) => {
+    cachedDirectory = Array.isArray(data?.Clinics) ? data.Clinics : [];
+    cachedAt = Date.now();
+    return cachedDirectory;
+  }).finally(() => {
+    directoryInFlight = null;
   });
-  cachedDirectory = Array.isArray(data?.Clinics) ? data.Clinics : [];
-  cachedAt = Date.now();
-  return cachedDirectory;
+  return directoryInFlight;
 }
 
 export function resolveDoctorRecipient(visit, clinics = []) {
   const rawClinic = String(visit.Clinic || '').trim();
+  const clinicLabel = `${rawClinic} ${String(visit.ClinicName || '').trim()}`.trim();
+  if (isWalkInClinic(clinicLabel)) {
+    return emptyRecipient('walk_in');
+  }
   const clinicNo = normalizeText(
     visit.ClinicNo || visit.ClinicNumber || (/^\d+$/.test(rawClinic) ? rawClinic : '')
   );
@@ -43,15 +65,21 @@ export function resolveDoctorRecipient(visit, clinics = []) {
   };
 }
 
-function emptyRecipient() {
+function emptyRecipient(validation = 'missing') {
   return {
     Doctor: '',
     DoctorPhoneNumber: '',
     RecipientClinicNo: '',
     RecipientClinicName: '',
     CanSendToDoctor: false,
-    RecipientValidation: 'missing'
+    RecipientValidation: validation
   };
+}
+
+export function isWalkInClinic(value) {
+  return /\bwalk[\s-]*in\b|\bself[\s-]*referr(?:ed|al)?\b/i.test(
+    String(value || '').trim()
+  );
 }
 
 function normalizeText(value) {

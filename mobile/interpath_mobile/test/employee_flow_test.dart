@@ -52,6 +52,7 @@ void main() {
       'status': 'failed',
       'createdAt': '2026-08-03T12:00:00.000Z',
       'errorMessage': 'Recipient unavailable',
+      'recipientVerified': true,
     });
 
     expect(delivered.isSuccessful, isTrue);

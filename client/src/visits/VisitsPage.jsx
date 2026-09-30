@@ -208,7 +208,7 @@ export function VisitsPage() {
           {visibleVisits.map((visit) => activeTab === 'bulk' ? (
             <BulkVisitCard key={visit.LabNumber} visit={visit} selected={selected.has(visit.LabNumber)} onToggle={() => toggleSelected(visit.LabNumber)} />
           ) : (
-            <VisitCard key={visit.LabNumber} visit={visit} showEmployeeDetails={user.usertype === 'Employee'} />
+            <VisitCard key={visit.LabNumber} visit={visit} date={dateTo} branch={employeeBranch || 'ALL'} showEmployeeDetails={user.usertype === 'Employee'} />
           ))}
         </section>
       )}
@@ -278,8 +278,8 @@ function SendingProgress({ count }) {
   );
 }
 
-function VisitCard({ visit, showEmployeeDetails }) {
-  return <Link className="panel block min-w-0 transition hover:-translate-y-0.5 hover:border-interpath-blue" to={`/visits/${visit.LabNumber}`} state={{ visit }}>
+function VisitCard({ visit, date, branch, showEmployeeDetails }) {
+  return <Link className="panel block min-w-0 transition hover:-translate-y-0.5 hover:border-interpath-blue" to={`/visits/${visit.LabNumber}`} state={{ visit, date, branch }}>
     <VisitCardHeader visit={visit} />
     <p className="mt-3 line-clamp-2 text-sm font-normal text-slate-600">{visit.Tests}</p>
     {showEmployeeDetails && <div className="mt-3 grid gap-2 text-xs text-slate-500"><span className="truncate">{visit.VisitDate}</span><span className="truncate">{visit.Clinic}</span><div className="flex flex-wrap gap-2"><span className="rounded-full bg-blue-50 px-2 py-1 text-interpath-blue">{visit.PaymentMode || 'Payment n/a'}</span><span className="rounded-full bg-slate-50 px-2 py-1 text-slate-600">{visit.Sex || 'Sex n/a'}</span></div></div>}
@@ -319,7 +319,7 @@ function AttemptCard({ attempt, retrying, onRetry }) {
   const failed = status === 'failed';
   const pending = ['accepted', 'sent'].includes(status);
   const age = Date.now() - new Date(attempt.createdAt).getTime();
-  const canRetry = failed || (pending && age >= 2 * 60 * 1000);
+  const canRetry = attempt.recipientVerified === true && (failed || (pending && age >= 2 * 60 * 1000));
   return <article className="panel"><div className="flex items-start justify-between gap-3"><div><p className="font-medium">{attempt.labNumber}</p><p className="mt-1 text-sm text-slate-600">{attempt.recipientName} · {attempt.destination}</p></div><span className={`rounded-full px-2.5 py-1 text-xs ${delivered ? 'bg-emerald-50 text-emerald-700' : failed ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-interpath-blue'}`}>{status}</span></div><p className="mt-3 text-xs text-slate-500">Updated {formatTimestamp(attempt.statusTimestamp || attempt.createdAt)}</p>{attempt.errorMessage && <p className="mt-2 text-sm text-red-600">{attempt.errorMessage}</p>}{canRetry && <button className="btn-secondary mt-3 w-full" onClick={onRetry} disabled={retrying}><RotateCcw className={retrying ? 'animate-spin' : ''} size={15} />{retrying ? 'Retrying…' : 'Retry'}</button>}</article>;
 }
 

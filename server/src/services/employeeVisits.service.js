@@ -5,6 +5,11 @@ import { parseSlisListResponse } from '../utils/slisResponse.js';
 
 const visitsCache = new Map();
 const visitsInFlight = new Map();
+const refreshTimers = new Map();
+
+const freshTtl = () => Number(process.env.SLIS_VISITS_CACHE_TTL_MS || 300000);
+const staleTtl = () => Number(process.env.SLIS_VISITS_STALE_TTL_MS || 1800000);
+const maxCacheEntries = () => Number(process.env.SLIS_VISITS_CACHE_MAX_ENTRIES || 100);
 
 export async function fetchEmployeeVisits({
   token,
@@ -17,14 +22,13 @@ export async function fetchEmployeeVisits({
   const cacheKey = `${normalizedBranch}:${normalizedDate}`;
   const cached = visitsCache.get(cacheKey);
   const age = cached ? Date.now() - cached.cachedAt : Number.POSITIVE_INFINITY;
-  const freshTtl = Number(process.env.SLIS_VISITS_CACHE_TTL_MS || 120000);
-  const staleTtl = Number(process.env.SLIS_VISITS_STALE_TTL_MS || 600000);
+  if (cached) cached.lastAccessedAt = Date.now();
 
-  if (!forceRefresh && cached && age < freshTtl) {
+  if (!forceRefresh && cached && age < freshTtl()) {
     return cached.visits;
   }
 
-  if (!forceRefresh && cached && age < staleTtl) {
+  if (!forceRefresh && cached && age < staleTtl()) {
     void refreshEmployeeVisits({
       token,
       normalizedDate,
@@ -56,8 +60,14 @@ function refreshEmployeeVisits({
     normalizedDate,
     normalizedBranch
   }).then((visits) => {
-    visitsCache.set(cacheKey, { visits, cachedAt: Date.now() });
+    const now = Date.now();
+    visitsCache.set(cacheKey, {
+      visits,
+      cachedAt: now,
+      lastAccessedAt: visitsCache.get(cacheKey)?.lastAccessedAt || now
+    });
     pruneVisitsCache();
+    scheduleRefresh({ token, normalizedDate, normalizedBranch, cacheKey });
     return visits;
   }).finally(() => {
     visitsInFlight.delete(cacheKey);
@@ -84,11 +94,47 @@ async function loadEmployeeVisits({ token, normalizedDate, normalizedBranch }) {
 }
 
 function pruneVisitsCache() {
-  const staleTtl = Number(process.env.SLIS_VISITS_STALE_TTL_MS || 600000);
-  const cutoff = Date.now() - staleTtl;
+  const cutoff = Date.now() - staleTtl();
   for (const [key, value] of visitsCache) {
-    if (value.cachedAt < cutoff) visitsCache.delete(key);
+    if (value.cachedAt < cutoff) removeCacheEntry(key);
   }
+
+  const overflow = visitsCache.size - maxCacheEntries();
+  if (overflow > 0) {
+    [...visitsCache.entries()]
+      .sort(([, a], [, b]) => a.lastAccessedAt - b.lastAccessedAt)
+      .slice(0, overflow)
+      .forEach(([key]) => removeCacheEntry(key));
+  }
+}
+
+function scheduleRefresh({ token, normalizedDate, normalizedBranch, cacheKey }, delay = freshTtl()) {
+  const existingTimer = refreshTimers.get(cacheKey);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  const timer = setTimeout(() => {
+    refreshTimers.delete(cacheKey);
+    const cached = visitsCache.get(cacheKey);
+    if (!cached || Date.now() - cached.lastAccessedAt > staleTtl()) {
+      removeCacheEntry(cacheKey);
+      return;
+    }
+
+    void refreshEmployeeVisits({ token, normalizedDate, normalizedBranch, cacheKey })
+      .catch(() => scheduleRefresh(
+        { token, normalizedDate, normalizedBranch, cacheKey },
+        Math.min(60000, freshTtl())
+      ));
+  }, Math.max(1000, delay));
+  timer.unref?.();
+  refreshTimers.set(cacheKey, timer);
+}
+
+function removeCacheEntry(cacheKey) {
+  visitsCache.delete(cacheKey);
+  const timer = refreshTimers.get(cacheKey);
+  if (timer) clearTimeout(timer);
+  refreshTimers.delete(cacheKey);
 }
 
 export function isCompletedVisit(visit) {

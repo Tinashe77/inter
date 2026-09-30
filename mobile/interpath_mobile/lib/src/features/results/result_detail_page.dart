@@ -5,7 +5,8 @@ import '../../shared/theme/interpath_theme.dart';
 import '../../shared/services/api_exception.dart';
 import '../../shared/widgets/interpath_shell.dart';
 import '../pdf/pdf_actions.dart';
-import '../whatsapp/whatsapp_service.dart';
+import '../visits/employee_visit_settings.dart';
+import '../visits/visit.dart';
 import 'result_models.dart';
 import 'results_repository.dart';
 
@@ -15,13 +16,15 @@ final resultDetailProvider =
 });
 
 class ResultDetailPage extends ConsumerWidget {
-  const ResultDetailPage({required this.labNumber, super.key});
+  const ResultDetailPage({required this.labNumber, this.visit, super.key});
 
   final String labNumber;
+  final Visit? visit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final resultState = ref.watch(resultDetailProvider(labNumber));
+    final visitSettings = ref.watch(employeeVisitSettingsProvider).value;
 
     return InterpathShell(
       title: labNumber,
@@ -45,15 +48,32 @@ class ResultDetailPage extends ConsumerWidget {
             ),
             const SizedBox(height: 10),
             OutlinedButton.icon(
-              onPressed: detail.pdfGenerated
+              onPressed: detail.pdfGenerated &&
+                      visit?.canSendToDoctor == true &&
+                      visitSettings != null
                   ? () => showDialog<void>(
                         context: context,
-                        builder: (_) => _WhatsAppShareDialog(detail: detail),
+                        builder: (_) => _WhatsAppShareDialog(
+                          detail: detail,
+                          visit: visit!,
+                          settings: visitSettings,
+                        ),
                       )
                   : null,
               icon: const Icon(Icons.chat_rounded),
-              label: const Text('Share securely via WhatsApp'),
+              label: Text(
+                visit?.canSendToDoctor == true
+                    ? 'Send securely to doctor or clinic'
+                    : 'WhatsApp unavailable for this result',
+              ),
             ),
+            if (visit?.recipientValidation == 'walk_in') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Walk-in and patient results cannot be sent through WhatsApp.',
+                textAlign: TextAlign.center,
+              ),
+            ],
             if (detail.resultsToFollow) ...[
               const SizedBox(height: 12),
               const _MessageBanner(
@@ -355,8 +375,14 @@ class _ResultError extends StatelessWidget {
 }
 
 class _WhatsAppShareDialog extends ConsumerStatefulWidget {
-  const _WhatsAppShareDialog({required this.detail});
+  const _WhatsAppShareDialog({
+    required this.detail,
+    required this.visit,
+    required this.settings,
+  });
   final ResultDetail detail;
+  final Visit visit;
+  final EmployeeVisitSettings settings;
 
   @override
   ConsumerState<_WhatsAppShareDialog> createState() =>
@@ -364,15 +390,8 @@ class _WhatsAppShareDialog extends ConsumerStatefulWidget {
 }
 
 class _WhatsAppShareDialogState extends ConsumerState<_WhatsAppShareDialog> {
-  final _phoneController = TextEditingController();
   bool _sending = false;
   String? _error;
-
-  @override
-  void dispose() {
-    _phoneController.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -384,13 +403,15 @@ class _WhatsAppShareDialogState extends ConsumerState<_WhatsAppShareDialog> {
         children: [
           Text('Result: ${widget.detail.labNumber}'),
           const SizedBox(height: 12),
-          TextField(
-            controller: _phoneController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Recipient phone number',
-              hintText: '0772 123 456',
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.verified_user_outlined),
+            title: Text(
+              widget.visit.doctor?.trim().isNotEmpty == true
+                  ? widget.visit.doctor!
+                  : widget.visit.clinic ?? 'Doctor or clinic',
             ),
+            subtitle: Text(_maskPhone(widget.visit.doctorPhoneNumber)),
           ),
           const SizedBox(height: 10),
           const Text(
@@ -419,25 +440,15 @@ class _WhatsAppShareDialogState extends ConsumerState<_WhatsAppShareDialog> {
   }
 
   Future<void> _share() async {
-    final phone = _phoneController.text.trim();
-    if (!WhatsAppService.isValidZimbabweNumber(phone)) {
-      setState(() => _error = 'Enter a valid Zimbabwe mobile number.');
-      return;
-    }
-
     setState(() {
       _sending = true;
       _error = null;
     });
     try {
-      final patientName = _value(
-        widget.detail.patientDetails,
-        const ['PatientName', 'Name', 'FullName'],
-      );
       await ref.read(resultsRepositoryProvider).sendWhatsAppResult(
-            phoneNumber: phone,
-            patientName: patientName.isEmpty ? 'Patient' : patientName,
             labNumber: widget.detail.labNumber,
+            date: widget.settings.date,
+            branch: widget.settings.branch,
           );
       if (mounted) {
         Navigator.pop(context);
@@ -451,6 +462,12 @@ class _WhatsAppShareDialogState extends ConsumerState<_WhatsAppShareDialog> {
       if (mounted) setState(() => _sending = false);
     }
   }
+}
+
+String _maskPhone(String? value) {
+  final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
+  if (digits.length < 7) return 'Verified clinic number';
+  return '+${digits.substring(0, 5)}•••${digits.substring(digits.length - 3)}';
 }
 
 bool _hasValue(String? value) => value != null && value.trim().isNotEmpty;

@@ -47,7 +47,10 @@ class VisitDetailPage extends StatelessWidget {
           ),
           const SizedBox(height: 18),
           ElevatedButton.icon(
-            onPressed: () => context.push('/results/$labNumber'),
+            onPressed: () => context.push(
+              '/results/$labNumber',
+              extra: visit,
+            ),
             icon: const Icon(Icons.science_rounded),
             label: const Text('View results'),
           ),

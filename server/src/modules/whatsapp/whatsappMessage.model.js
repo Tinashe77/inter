@@ -8,6 +8,7 @@ const whatsappMessageSchema = new mongoose.Schema({
   shareUrl: String,
   createdBy: { type: String, index: true },
   source: { type: String, enum: ['single', 'bulk', 'retry'], default: 'single' },
+  recipientVerified: { type: Boolean, default: false },
   retryOfMessageId: String,
   status: String,
   statusTimestamp: Date,

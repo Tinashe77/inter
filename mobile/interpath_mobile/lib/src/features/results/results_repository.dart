@@ -24,15 +24,15 @@ class ResultsRepository {
 
   Future<String?> sendWhatsAppResult({
     required String labNumber,
-    required String phoneNumber,
-    required String patientName,
+    required DateTime date,
+    required String branch,
   }) async {
     final dio = ref.read(dioProvider);
     final response = await dio.post<Map<String, dynamic>>(
       '/api/results/${Uri.encodeComponent(labNumber)}/send-whatsapp',
       data: {
-        'phoneNumber': phoneNumber,
-        'patientName': patientName,
+        'date': DateFormat('yyyy-MM-dd').format(date),
+        'branch': branch,
       },
     );
     return response.data?['messageId']?.toString();
@@ -94,6 +94,7 @@ class WhatsAppSendAttempt {
     this.statusTimestamp,
     this.errorMessage,
     this.source,
+    this.recipientVerified = false,
   });
 
   final String id;
@@ -105,13 +106,15 @@ class WhatsAppSendAttempt {
   final DateTime? statusTimestamp;
   final String? errorMessage;
   final String? source;
+  final bool recipientVerified;
 
   bool get isSuccessful => const {'delivered', 'read'}.contains(status);
   bool get isFailed => status == 'failed';
   bool get isPending => const {'accepted', 'sent'}.contains(status);
   bool get canRetry =>
-      isFailed ||
-      (isPending && DateTime.now().difference(createdAt).inMinutes >= 2);
+      recipientVerified &&
+      (isFailed ||
+          (isPending && DateTime.now().difference(createdAt).inMinutes >= 2));
 
   factory WhatsAppSendAttempt.fromJson(Map<String, dynamic> json) {
     return WhatsAppSendAttempt(
@@ -127,6 +130,7 @@ class WhatsAppSendAttempt {
       ),
       errorMessage: json['errorMessage']?.toString(),
       source: json['source']?.toString(),
+      recipientVerified: json['recipientVerified'] == true,
     );
   }
 }

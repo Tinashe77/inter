@@ -63,7 +63,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/results/:labNumber',
         builder: (context, state) {
           final labNumber = state.pathParameters['labNumber'] ?? '';
-          return ResultDetailPage(labNumber: labNumber);
+          return ResultDetailPage(
+            labNumber: labNumber,
+            visit: state.extra is Visit ? state.extra! as Visit : null,
+          );
         },
       ),
       GoRoute(

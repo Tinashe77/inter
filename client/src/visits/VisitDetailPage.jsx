@@ -8,6 +8,8 @@ export function VisitDetailPage() {
   const { labNumber } = useParams();
   const { state } = useLocation();
   const visit = state?.visit;
+  const visitDate = state?.date || visit?.VisitDate || '';
+  const visitBranch = state?.branch || visit?.Branch || 'ALL';
   const [payload, setPayload] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -53,6 +55,26 @@ export function VisitDetailPage() {
     setShareLoading(true);
     setShareError('');
     setShareDraft(createEmptyShareDraft(channel));
+
+    if (channel === 'whatsapp') {
+      const canSend = visit?.CanSendToDoctor === true && Boolean(visit?.DoctorPhoneNumber);
+      setShareDraft({
+        ...createEmptyShareDraft(channel),
+        clinicName: visit?.Clinic || '',
+        matchedClinic: visit?.RecipientClinicName ? { ClinicName: visit.RecipientClinicName } : null,
+        doctorName: visit?.Doctor || visit?.RecipientClinicName || 'Doctor',
+        phoneNumbers: visit?.DoctorPhoneNumber ? [visit.DoctorPhoneNumber] : [],
+        isEditing: false,
+        lockedRecipient: true
+      });
+      if (!canSend) {
+        setShareError(visit?.RecipientValidation === 'walk_in'
+          ? 'Walk-in and patient results cannot be sent through WhatsApp.'
+          : 'A verified doctor, clinic or hospital WhatsApp number is not available for this result.');
+      }
+      setShareLoading(false);
+      return;
+    }
 
     try {
       const clinicName = String(displayVisit?.Clinic || '').trim();
@@ -105,17 +127,13 @@ export function VisitDetailPage() {
     try {
       setShareLoading(true);
       if (shareDraft.channel === 'whatsapp') {
-        const sends = await Promise.allSettled(phoneNumbers.map((phone) => http.post(`/results/${labNumber}/send-whatsapp`, {
-          phoneNumber: phone,
-          patientName: doctorName || 'Doctor'
-        })));
-        const accepted = sends.filter((result) => result.status === 'fulfilled').length;
-        const failures = sends.filter((result) => result.status === 'rejected');
+        await http.post(`/results/${labNumber}/send-whatsapp`, {
+          date: visitDate,
+          branch: visitBranch
+        });
         setShareOpen(false);
         setShareLoading(false);
-        setWhatsappMessage(failures.length === 0
-          ? `${accepted} WhatsApp message${accepted === 1 ? '' : 's'} accepted by Meta. Check Send history for confirmed delivery.`
-          : `${accepted} accepted by Meta; ${failures.length} failed. ${failures.map((result) => result.reason?.message || 'WhatsApp send failed.').join(' ')}`);
+        setWhatsappMessage('The doctor or clinic notification was accepted by Meta. Check Send history for confirmed delivery.');
         return;
       }
 
@@ -214,7 +232,7 @@ export function VisitDetailPage() {
               Preview PDF
             </a>
           )}
-          <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('whatsapp')} disabled={!payload?.pdfGenerated}>
+          <button className="btn-secondary w-full sm:w-auto" onClick={() => openShareDialog('whatsapp')} disabled={!payload?.pdfGenerated || visit?.CanSendToDoctor !== true}>
             <MessageCircle size={16} />
             Send via official WhatsApp API
           </button>
@@ -223,6 +241,11 @@ export function VisitDetailPage() {
             Share via Email
           </button>
           <button className="btn-secondary w-full sm:w-auto" onClick={requestCovidCertificate}>Covid Certificate</button>
+          {visit?.RecipientValidation === 'walk_in' && (
+            <p className="w-full text-sm text-amber-700">
+              Walk-in and patient results cannot be sent through WhatsApp. Only verified doctor, clinic, or hospital recipients are allowed.
+            </p>
+          )}
         </section>
       )}
       {!loading && payload?.metadata && (
@@ -255,12 +278,12 @@ export function VisitDetailPage() {
               <Detail label="Doctor" value={shareDraft.doctorName} />
               <Detail label={shareDraft.channel === 'email' ? 'Doctor email' : 'Doctor phones'} value={shareDraft.channel === 'email' ? shareDraft.email : compactPhoneNumbers(shareDraft.phoneNumbers).join(', ')} />
             </div>
-            {!shareLoading && !shareDraft.isEditing && (
+            {!shareLoading && !shareDraft.isEditing && !shareError && (
               <div className="mt-4 rounded-lg bg-blue-50 p-3 text-sm text-slate-700">
                 Are these doctor details correct?
               </div>
             )}
-            {!shareLoading && shareDraft.isEditing && (
+            {!shareLoading && shareDraft.isEditing && !shareDraft.lockedRecipient && (
               <div className="mt-4 grid gap-3">
                 <label className="block text-sm font-normal">
                   Doctor name
@@ -297,8 +320,8 @@ export function VisitDetailPage() {
             )}
             <div className="mt-4 grid gap-2 sm:flex sm:justify-end">
               <button className="btn-secondary" onClick={() => setShareOpen(false)}>Cancel</button>
-              {!shareDraft.isEditing && <button className="btn-secondary" onClick={() => setShareDraft((current) => ({ ...current, isEditing: true }))}>No, edit details</button>}
-              <button className="btn-primary" onClick={completeShare} disabled={shareLoading}>
+              {!shareDraft.isEditing && !shareDraft.lockedRecipient && <button className="btn-secondary" onClick={() => setShareDraft((current) => ({ ...current, isEditing: true }))}>No, edit details</button>}
+              <button className="btn-primary" onClick={completeShare} disabled={shareLoading || Boolean(shareError)}>
                 {shareDraft.channel === 'email' ? 'Open Email' : 'Approve and send'}
               </button>
             </div>
@@ -475,7 +498,8 @@ function createEmptyShareDraft(channel = 'whatsapp') {
     phone: '',
     phoneNumbers: [''],
     email: '',
-    isEditing: false
+    isEditing: false,
+    lockedRecipient: false
   };
 }
 
