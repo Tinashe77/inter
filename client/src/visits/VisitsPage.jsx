@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CheckCircle2, Clock3, History, Loader2, MapPin, MessageCircle, RefreshCw, RotateCcw, Search, Send, ShieldCheck, X, XCircle } from 'lucide-react';
 import { http } from '../api/http.js';
@@ -35,10 +35,12 @@ export function VisitsPage() {
   const [pagination, setPagination] = useState({ page: 1, hasMore: false, totalRecords: null });
   const [loadingMore, setLoadingMore] = useState(false);
   const [prefetchError, setPrefetchError] = useState('');
+  const loadGeneration = useRef(0);
 
   async function loadVisits(range = {}) {
     const requestedPage = range.page || 1;
     const append = requestedPage > 1;
+    const generation = append ? loadGeneration.current : ++loadGeneration.current;
     if (append) setLoadingMore(true);
     else {
       setLoading(true);
@@ -56,16 +58,22 @@ export function VisitsPage() {
           ? `/visits?date=${formatSlisDate(to)}&branch=${encodeURIComponent(employeeBranch || 'ALL')}&page=${requestedPage}`
           : `/visits?dateFrom=${from}&dateTo=${to}`;
       const { data } = await http.get(endpoint);
-      const nextVisits = applyEmployeeBranchFilter(data.visits || [], user.usertype, employeeBranch);
+      if (generation !== loadGeneration.current) return;
+      // Employee pages are already scoped by the backend through SLIS's Branch
+      // header. Clinic is the referring facility and must not be treated as the
+      // Interpath branch, otherwise valid visits disappear from the result set.
+      const nextVisits = Array.isArray(data.visits) ? data.visits : [];
       setVisits((current) => append ? mergeVisits(current, nextVisits) : nextVisits);
       setPagination(data.pagination || { page: 1, hasMore: false, totalRecords: nextVisits.length });
       if (!append) setSelected(new Set());
       setMessage(data.message || '');
     } catch (err) {
+      if (generation !== loadGeneration.current) return;
       if (!append) setVisits([]);
       if (append) setPrefetchError(err.message);
       else setError(err.message);
     } finally {
+      if (generation !== loadGeneration.current) return;
       setHasLoaded(true);
       setLoading(false);
       setLoadingMore(false);
@@ -364,5 +372,3 @@ function formatTimestamp(value) { const date = new Date(value); return Number.is
 function todayIso() { return new Date().toISOString().slice(0, 10); }
 function defaultDateFrom(role) { const daysBack = role === 'Clinic_Doctor' ? 30 : 5; const date = new Date(); date.setDate(date.getDate() - daysBack); return date.toISOString().slice(0, 10); }
 function formatSlisDate(value) { if (/^\d{8}$/.test(value)) return value; const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value); if (!match) return value; const [, yyyy, mm, dd] = match; return `${dd}${mm}${yyyy}`; }
-function applyEmployeeBranchFilter(visits, usertype, branch) { const selectedBranch = normalizeLookupValue(branch); if (usertype !== 'Employee' || !selectedBranch || selectedBranch === 'all') return visits; return visits.filter((visit) => [visit.Branch, visit.branch, visit.Location, visit.location, visit.Clinic, visit.ClinicName, visit.CollectionPoint].map(normalizeLookupValue).filter(Boolean).some((value) => value === selectedBranch || value.includes(selectedBranch) || selectedBranch.includes(value))); }
-function normalizeLookupValue(value) { return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase(); }
