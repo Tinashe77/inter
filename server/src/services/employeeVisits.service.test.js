@@ -44,3 +44,25 @@ test('continues to accept a direct array response', () => {
     totalPages: 1
   });
 });
+
+test('parses the SLIS employee Patients response contract', () => {
+  const parsed = parsePagedEmployeeVisits({
+    Status: 'Success',
+    Message: 'Success 8/208 records found',
+    PageNumber: 5,
+    TotalPages: 5,
+    TotalDayCount: 208,
+    PageRecordsCount: 8,
+    Patients: [
+      { LabNumber: 'ILH_TEST_1', PatientName: 'Test Patient' },
+      { LabNumber: 'ILH_TEST_2', PatientName: 'Test Patient Two' }
+    ]
+  }, 5);
+
+  assert.equal(parsed.page, 5);
+  assert.equal(parsed.totalPages, 5);
+  assert.equal(parsed.totalRecords, 208);
+  assert.equal(parsed.pageRecordsCount, 8);
+  assert.equal(parsed.rows.length, 2);
+  assert.equal(parsed.rows[0].LabNumber, 'ILH_TEST_1');
+});

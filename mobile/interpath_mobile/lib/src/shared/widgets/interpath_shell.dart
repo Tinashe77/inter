@@ -45,9 +45,9 @@ class InterpathShell extends StatelessWidget {
           children: [
             ListView(
               padding: EdgeInsets.fromLTRB(
-                18,
-                8,
-                18,
+                12,
+                6,
+                12,
                 overlay == null ? 28 : 148,
               ),
               children: [child],

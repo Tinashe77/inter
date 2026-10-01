@@ -143,7 +143,34 @@ Branch: {BRANCH_IN_UPPERCASE}
 Date: {DDMMYYYY}
 ```
 
-`pageNumber` is a positive integer. Each page contains up to 50 records. Page 1 also supplies the total number of pages, total records, and records per page. Exact response property names should be confirmed by the SLIS team.
+`pageNumber` is a positive integer. Each page contains up to 50 records. The confirmed response contract is:
+
+```json
+{
+  "Status": "Success",
+  "Message": "Success 50/208 records found",
+  "PageNumber": 1,
+  "TotalPages": 5,
+  "TotalDayCount": 208,
+  "PageRecordsCount": 50,
+  "Patients": [
+    {
+      "LabNumber": "ILH_TEST_1",
+      "PatientName": "Test Patient",
+      "Tests": "FBC",
+      "VisitDate": "24/09/2026 08:00:00",
+      "Clinic": "EXAMPLE CLINIC",
+      "PaymentMode": "ACCOUNT",
+      "Sex": "FEMALE",
+      "DateOfBirth": "01/01/1990",
+      "Status": "COMPLETED",
+      "Critical": ""
+    }
+  ]
+}
+```
+
+`TotalDayCount` is the total number of records for the selected branch and date. `PageRecordsCount` is the number of records on the current page; it is not the configured page size.
 
 Example:
 

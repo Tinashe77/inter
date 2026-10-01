@@ -8,7 +8,7 @@ class ApiConfig {
 
   static const baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:5001',
+    defaultValue: 'https://inter-8puh.onrender.com',
   );
 
   static bool get isProduction => environment == 'production';

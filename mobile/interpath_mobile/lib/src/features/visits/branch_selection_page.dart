@@ -42,7 +42,7 @@ class _BranchSelectionPageState extends ConsumerState<BranchSelectionPage> {
           const Text(
             'Daily visits will be requested from SLIS for this branch.',
           ),
-          const SizedBox(height: 22),
+          const SizedBox(height: 16),
           TextField(
             controller: _controller,
             textCapitalization: TextCapitalization.characters,
@@ -52,20 +52,38 @@ class _BranchSelectionPageState extends ConsumerState<BranchSelectionPage> {
               prefixIcon: Icon(Icons.location_on_outlined),
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Wrap(
             spacing: 8,
             runSpacing: 8,
             children: [
               for (final branch in employeeBranches)
                 ChoiceChip(
-                  label: Text(branch),
+                  label: Text(
+                    branch,
+                    style: TextStyle(
+                      color: _controller.text == branch
+                          ? Colors.white
+                          : const Color(0xFF334155),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
                   selected: _controller.text == branch,
+                  backgroundColor: Colors.white,
+                  selectedColor: Theme.of(context).colorScheme.primary,
+                  side: BorderSide(
+                    color: _controller.text == branch
+                        ? Theme.of(context).colorScheme.primary
+                        : const Color(0xFFD6DEEB),
+                  ),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
                   onSelected: (_) => setState(() => _controller.text = branch),
                 ),
             ],
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 18),
           ElevatedButton.icon(
             onPressed: _continue,
             icon: const Icon(Icons.check_circle_outline_rounded),

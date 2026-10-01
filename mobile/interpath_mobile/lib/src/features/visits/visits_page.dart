@@ -13,8 +13,8 @@ import 'visits_repository.dart';
 
 typedef VisitQuery = ({String branch, DateTime date});
 
-final visitsProvider =
-    FutureProvider.autoDispose.family<List<Visit>, VisitQuery>((ref, query) {
+final visitsProvider = FutureProvider.autoDispose
+    .family<VisitPageResult, VisitQuery>((ref, query) {
   return ref.read(visitsRepositoryProvider).listVisits(
         date: query.date,
         branch: query.branch,
@@ -34,14 +34,21 @@ class VisitsPage extends ConsumerStatefulWidget {
 }
 
 class _VisitsPageState extends ConsumerState<VisitsPage> {
-  static const _pageSize = 40;
   final _searchController = TextEditingController();
   String _search = '';
-  int _visibleCount = _pageSize;
   int _activeTab = 0;
   final Set<String> _selectedLabNumbers = {};
   bool _sending = false;
   int _sendingCount = 0;
+  final List<Visit> _additionalVisits = [];
+  int _loadedPage = 1;
+  bool _hasMore = false;
+  bool _loadingMore = false;
+  bool _prefetchFailed = false;
+  bool _prefetchScheduled = false;
+  String _visitQueryKey = '';
+  EmployeeVisitSettings? _currentSettings;
+  List<Visit> _bulkEligibleVisits = const [];
 
   @override
   void dispose() {
@@ -55,11 +62,12 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
 
     return InterpathShell(
       title: 'Results',
-      overlay: _sending ? _SendingProgress(count: _sendingCount) : null,
+      overlay: _buildBottomOverlay(),
       child: settingsState.when(
         loading: () => const _LoadingVisits(),
         error: (_, __) => const Text('Unable to load visit preferences.'),
         data: (settings) {
+          _currentSettings = settings;
           if (settings.branch.isEmpty) {
             return ElevatedButton(
               onPressed: () => context.go('/branch-selection'),
@@ -79,7 +87,6 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                 child: TabBar(
                   onTap: (index) => setState(() {
                     _activeTab = index;
-                    _visibleCount = _pageSize;
                   }),
                   tabs: const [
                     Tab(text: 'Results'),
@@ -93,14 +100,13 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                 _VisitControls(
                   settings: settings,
                   isLoading: visitsState.isLoading,
-                  onRefresh: () => ref.invalidate(visitsProvider(query)),
+                  onRefresh: () => _refreshVisits(query),
                 ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: _searchController,
                   onChanged: (value) => setState(() {
                     _search = value;
-                    _visibleCount = _pageSize;
                   }),
                   decoration: InputDecoration(
                     labelText: 'Search results',
@@ -114,7 +120,6 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                               _searchController.clear();
                               setState(() {
                                 _search = '';
-                                _visibleCount = _pageSize;
                               });
                             },
                             icon: const Icon(Icons.clear_rounded),
@@ -136,7 +141,30 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                     message: apiErrorMessage(error),
                     onRetry: () => ref.invalidate(visitsProvider(query)),
                   ),
-                  data: (items) {
+                  data: (pageResult) {
+                    final queryKey =
+                        '${query.branch}|${query.date.toIso8601String()}';
+                    if (_visitQueryKey != queryKey) {
+                      _visitQueryKey = queryKey;
+                      _additionalVisits.clear();
+                      _loadedPage = pageResult.page;
+                      _hasMore = pageResult.hasMore;
+                      _prefetchFailed = false;
+                    } else if (_loadedPage == 1 && _additionalVisits.isEmpty) {
+                      _hasMore = pageResult.hasMore;
+                    }
+                    final items =
+                        _mergeVisitPages(pageResult.visits, _additionalVisits);
+                    if (_hasMore &&
+                        !_loadingMore &&
+                        !_prefetchFailed &&
+                        !_prefetchScheduled) {
+                      _prefetchScheduled = true;
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        _prefetchScheduled = false;
+                        if (mounted) _loadMore(settings);
+                      });
+                    }
                     final source = _activeTab == 0
                         ? items
                         : items
@@ -152,8 +180,13 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                         completed: _activeTab == 1,
                       );
                     }
-                    final visible = filtered.take(_visibleCount).toList();
+                    final visible = filtered;
                     final eligible = filtered;
+                    _bulkEligibleVisits = items
+                        .where(
+                          (visit) => visit.isCompleted && visit.canSendToDoctor,
+                        )
+                        .toList();
                     final selected = eligible
                         .where(
                           (visit) =>
@@ -171,7 +204,6 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                             eligible: eligible.length,
                             selected: selected.length,
                             allSelected: allSelected,
-                            sending: _sending,
                             onSelectAll: eligible.isEmpty
                                 ? null
                                 : (value) => setState(() {
@@ -187,14 +219,11 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                                         );
                                       }
                                     }),
-                            onReview: selected.isEmpty || _sending
-                                ? null
-                                : () => _reviewAndSend(selected, settings),
                           )
                         else
-                          Text(
-                            '${filtered.length} result${filtered.length == 1 ? '' : 's'}',
-                            style: Theme.of(context).textTheme.titleMedium,
+                          _ResultsCount(
+                            count: filtered.length,
+                            loading: _hasMore || _loadingMore,
                           ),
                         const SizedBox(height: 10),
                         for (final visit in visible)
@@ -215,14 +244,22 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                                     })
                                 : null,
                           ),
-                        if (visible.length < filtered.length)
+                        if (_hasMore)
                           OutlinedButton.icon(
-                            onPressed: () => setState(
-                              () => _visibleCount += _pageSize,
-                            ),
-                            icon: const Icon(Icons.expand_more_rounded),
+                            onPressed:
+                                _loadingMore ? null : () => _loadMore(settings),
+                            icon: _loadingMore
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.expand_more_rounded),
                             label: Text(
-                              'Load more (${filtered.length - visible.length} remaining)',
+                              _loadingMore
+                                  ? 'Loading next 50…'
+                                  : 'Load next 50 results',
                             ),
                           ),
                       ],
@@ -234,6 +271,61 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
         },
       ),
     );
+  }
+
+  Widget? _buildBottomOverlay() {
+    if (_sending) return _SendingProgress(count: _sendingCount);
+    if (_activeTab != 1 ||
+        _selectedLabNumbers.isEmpty ||
+        _currentSettings == null) {
+      return null;
+    }
+    final selected = _bulkEligibleVisits
+        .where((visit) => _selectedLabNumbers.contains(visit.labNumber))
+        .toList();
+    if (selected.isEmpty) return null;
+    return _BulkSelectionDock(
+      count: selected.length,
+      loadingMore: _hasMore || _loadingMore,
+      onPressed: () => _reviewAndSend(selected, _currentSettings!),
+    );
+  }
+
+  void _refreshVisits(VisitQuery query) {
+    setState(() {
+      _additionalVisits.clear();
+      _loadedPage = 1;
+      _hasMore = false;
+      _prefetchFailed = false;
+    });
+    ref.invalidate(visitsProvider(query));
+  }
+
+  Future<void> _loadMore(EmployeeVisitSettings settings) async {
+    setState(() => _loadingMore = true);
+    try {
+      final next = await ref.read(visitsRepositoryProvider).listVisits(
+            date: settings.date,
+            branch: settings.branch,
+            page: _loadedPage + 1,
+          );
+      if (!mounted) return;
+      setState(() {
+        _additionalVisits.addAll(next.visits);
+        _loadedPage = next.page;
+        _hasMore = next.hasMore;
+        _prefetchFailed = false;
+      });
+    } catch (error) {
+      if (mounted) setState(() => _prefetchFailed = true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(apiErrorMessage(error))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _loadingMore = false);
+    }
   }
 
   Future<void> _reviewAndSend(
@@ -378,6 +470,139 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
   }
 }
 
+class _ResultsCount extends StatelessWidget {
+  const _ResultsCount({required this.count, required this.loading});
+  final int count;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text(
+          '$count result${count == 1 ? '' : 's'}',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        if (loading) ...[
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(
+              color: InterpathColors.softBlue,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: InterpathColors.glassBorder),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox.square(
+                  dimension: 12,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: InterpathColors.primaryBlue,
+                  ),
+                ),
+                SizedBox(width: 6),
+                Text(
+                  'Loading more',
+                  style: TextStyle(
+                    color: InterpathColors.primaryBlue,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                SizedBox(width: 5),
+                CircleAvatar(
+                  radius: 3,
+                  backgroundColor: InterpathColors.accentRed,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _BulkSelectionDock extends StatelessWidget {
+  const _BulkSelectionDock({
+    required this.count,
+    required this.loadingMore,
+    required this.onPressed,
+  });
+  final int count;
+  final bool loadingMore;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: InterpathColors.glassBorder),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x240F2A66),
+            blurRadius: 24,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: InterpathColors.softBlue,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Center(
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: InterpathColors.primaryBlue,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Ready to review',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  loadingMore
+                      ? 'More results are still loading'
+                      : 'Confirm recipients before sending',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: InterpathColors.textMuted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          FilledButton.icon(
+            onPressed: onPressed,
+            icon: const Icon(Icons.fact_check_outlined, size: 18),
+            label: const Text('Review & send'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _SendingProgress extends StatelessWidget {
   const _SendingProgress({required this.count});
 
@@ -464,6 +689,14 @@ List<Visit> filterVisits(List<Visit> visits, String query) {
   }).toList();
 }
 
+List<Visit> _mergeVisitPages(List<Visit> first, List<Visit> additional) {
+  final merged = <String, Visit>{};
+  for (final visit in [...first, ...additional]) {
+    merged[visit.labNumber] = visit;
+  }
+  return merged.values.toList();
+}
+
 class _VisitControls extends ConsumerWidget {
   const _VisitControls({
     required this.settings,
@@ -478,76 +711,139 @@ class _VisitControls extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Card(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xE6181C38), Color(0xE61B2457)],
-          ),
-          borderRadius: BorderRadius.circular(20),
-        ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Row(
+            Row(
               children: [
-                Icon(Icons.tune_rounded, color: InterpathColors.primaryBlue),
-                SizedBox(width: 10),
-                Text(
+                const Icon(
+                  Icons.tune_rounded,
+                  color: InterpathColors.primaryBlue,
+                  size: 19,
+                ),
+                const SizedBox(width: 8),
+                const Text(
                   'Result filters',
                   style: TextStyle(
-                    fontSize: 17,
+                    fontSize: 15,
                     fontWeight: FontWeight.w700,
                     color: InterpathColors.textDark,
                   ),
                 ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => context.go('/branch-selection'),
+                  child: const Text('Change branch'),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const _ControlIcon(icon: Icons.location_on_outlined),
-              title: const Text('Branch'),
-              subtitle: Text(settings.branch),
-              trailing: TextButton(
-                onPressed: () => context.go('/branch-selection'),
-                child: const Text('Change'),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: _CompactFilter(
+                    icon: Icons.location_on_outlined,
+                    label: 'Branch',
+                    value: settings.branch,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _CompactFilter(
+                    icon: Icons.calendar_today_outlined,
+                    label: 'Visit date',
+                    value: DateFormat('d MMM yyyy').format(settings.date),
+                    onTap: () async {
+                      final date = await showDatePicker(
+                        context: context,
+                        initialDate: settings.date,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime.now(),
+                      );
+                      if (date != null) {
+                        ref
+                            .read(employeeVisitSettingsProvider.notifier)
+                            .selectDate(date);
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 44,
+              child: ElevatedButton.icon(
+                onPressed: isLoading ? null : onRefresh,
+                icon: isLoading
+                    ? const SizedBox.square(
+                        dimension: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded, size: 19),
+                label: Text(isLoading ? 'Loading results…' : 'Refresh results'),
               ),
             ),
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              leading: const _ControlIcon(icon: Icons.calendar_today_outlined),
-              title: const Text('Visit date'),
-              subtitle:
-                  Text(DateFormat('EEEE, d MMMM yyyy').format(settings.date)),
-              onTap: () async {
-                final date = await showDatePicker(
-                  context: context,
-                  initialDate: settings.date,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now(),
-                );
-                if (date != null) {
-                  ref
-                      .read(employeeVisitSettingsProvider.notifier)
-                      .selectDate(date);
-                }
-              },
-              trailing: const Icon(Icons.edit_calendar_outlined),
-            ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: isLoading ? null : onRefresh,
-              icon: isLoading
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.refresh_rounded),
-              label: Text(isLoading ? 'Loading results…' : 'Refresh results'),
-            ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CompactFilter extends StatelessWidget {
+  const _CompactFilter({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.onTap,
+  });
+  final IconData icon;
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: InterpathColors.surfaceRaised,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            children: [
+              Icon(icon, size: 18, color: InterpathColors.primaryBlue),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: InterpathColors.textMuted,
+                      ),
+                    ),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -645,9 +941,11 @@ class _VisitCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
+      margin: const EdgeInsets.only(bottom: 6),
       child: ListTile(
-        contentPadding: const EdgeInsets.fromLTRB(15, 13, 12, 13),
+        dense: true,
+        minVerticalPadding: 5,
+        contentPadding: const EdgeInsets.fromLTRB(9, 5, 8, 5),
         onTap: selectable
             ? onSelected == null
                 ? null
@@ -661,14 +959,15 @@ class _VisitCard extends StatelessWidget {
                     : (value) => onSelected!(value ?? false),
               )
             : Container(
-                width: 46,
-                height: 46,
+                width: 32,
+                height: 32,
                 decoration: BoxDecoration(
                   color: InterpathColors.softBlue,
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(9),
                 ),
                 child: const Icon(
                   Icons.science_outlined,
+                  size: 19,
                   color: InterpathColors.primaryBlue,
                 ),
               ),
@@ -676,9 +975,10 @@ class _VisitCard extends StatelessWidget {
           visit.patientName.isEmpty ? 'Unnamed patient' : visit.patientName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
         ),
         subtitle: Padding(
-          padding: const EdgeInsets.only(top: 6),
+          padding: const EdgeInsets.only(top: 3),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -701,23 +1001,28 @@ class _VisitCard extends StatelessWidget {
                         vertical: 3,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF123A34),
+                        color: const Color(0xFFECFDF5),
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
                         visit.status,
                         style: const TextStyle(
                           color: InterpathColors.successGreen,
-                          fontSize: 10,
+                          fontSize: 9,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
                     ),
                 ],
               ),
-              if (visit.tests.isNotEmpty)
-                Text(visit.tests, maxLines: 2, overflow: TextOverflow.ellipsis),
-              if ((visit.clinic ?? '').isNotEmpty) Text(visit.clinic!),
+              Text(
+                [visit.tests, visit.clinic]
+                    .where((value) => value?.trim().isNotEmpty == true)
+                    .join(' • '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11),
+              ),
               if (selectable && visit.canSendToDoctor)
                 Text(
                   'To ${visit.doctor?.trim().isNotEmpty == true ? visit.doctor : 'doctor'} • ${maskPhone(visit.doctorPhoneNumber)}',
@@ -745,56 +1050,34 @@ class _CompletedActions extends StatelessWidget {
     required this.eligible,
     required this.selected,
     required this.allSelected,
-    required this.sending,
     required this.onSelectAll,
-    required this.onReview,
   });
 
   final int total;
   final int eligible;
   final int selected;
   final bool allSelected;
-  final bool sending;
   final ValueChanged<bool>? onSelectAll;
-  final VoidCallback? onReview;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Row(
           children: [
-            Row(
-              children: [
-                Checkbox(
-                  value: allSelected,
-                  onChanged: onSelectAll == null
-                      ? null
-                      : (value) => onSelectAll!(value ?? false),
-                ),
-                Expanded(
-                  child: Text(
-                    'Select all valid ($eligible ready of $total)',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                ),
-              ],
+            Checkbox(
+              value: allSelected,
+              onChanged: onSelectAll == null
+                  ? null
+                  : (value) => onSelectAll!(value ?? false),
             ),
-            const SizedBox(height: 8),
-            ElevatedButton.icon(
-              onPressed: onReview,
-              icon: sending
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.fact_check_outlined),
-              label: Text(
-                sending
-                    ? 'Sending approved results…'
-                    : 'Send via WhatsApp ($selected)',
+            Expanded(
+              child: Text(
+                selected > 0
+                    ? '$selected selected · $eligible ready'
+                    : 'Select all valid · $eligible ready of $total',
+                style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
           ],
@@ -990,22 +1273,4 @@ String maskPhone(String? value) {
   final phone = (value ?? '').trim();
   if (phone.length < 6) return phone;
   return '${phone.substring(0, 5)}•••${phone.substring(phone.length - 3)}';
-}
-
-class _ControlIcon extends StatelessWidget {
-  const _ControlIcon({required this.icon});
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 40,
-      height: 40,
-      decoration: BoxDecoration(
-        color: InterpathColors.softBlue,
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Icon(icon, color: InterpathColors.primaryBlue, size: 20),
-    );
-  }
 }

@@ -6,10 +6,87 @@ import { parseSlisListResponse } from '../utils/slisResponse.js';
 const visitsCache = new Map();
 const visitsInFlight = new Map();
 const refreshTimers = new Map();
+const visitPageCache = new Map();
+const visitPageInFlight = new Map();
 
 const freshTtl = () => Number(process.env.SLIS_VISITS_CACHE_TTL_MS || 300000);
 const staleTtl = () => Number(process.env.SLIS_VISITS_STALE_TTL_MS || 1800000);
 const maxCacheEntries = () => Number(process.env.SLIS_VISITS_CACHE_MAX_ENTRIES || 100);
+
+export async function fetchEmployeeVisitsPage({ token, date, branch = 'ALL', page = 1 }) {
+  const normalizedDate = normalizeDateForSlis(date);
+  const normalizedBranch = String(branch || 'ALL').trim().toUpperCase();
+  const normalizedPage = positiveInteger(page, 1);
+  const cacheKey = `${normalizedBranch}:${normalizedDate}:page:${normalizedPage}`;
+  const cached = visitPageCache.get(cacheKey);
+  const age = cached ? Date.now() - cached.cachedAt : Number.POSITIVE_INFINITY;
+
+  if (cached && age < freshTtl()) return cached.value;
+  if (cached && age < staleTtl()) {
+    void refreshEmployeeVisitPage({ token, normalizedDate, normalizedBranch, page: normalizedPage, cacheKey });
+    return cached.value;
+  }
+  return refreshEmployeeVisitPage({ token, normalizedDate, normalizedBranch, page: normalizedPage, cacheKey });
+}
+
+function refreshEmployeeVisitPage({ token, normalizedDate, normalizedBranch, page, cacheKey }) {
+  if (visitPageInFlight.has(cacheKey)) return visitPageInFlight.get(cacheKey);
+  const request = loadEmployeeVisitPage({ token, normalizedDate, normalizedBranch, page })
+    .then((value) => {
+      visitPageCache.set(cacheKey, { value, cachedAt: Date.now() });
+      if (visitPageCache.size > maxCacheEntries() * 5) visitPageCache.delete(visitPageCache.keys().next().value);
+      return value;
+    })
+    .finally(() => visitPageInFlight.delete(cacheKey));
+  visitPageInFlight.set(cacheKey, request);
+  return request;
+}
+
+async function loadEmployeeVisitPage({ token, normalizedDate, normalizedBranch, page }) {
+  const timeout = Number(process.env.SLIS_VISITS_TIMEOUT_MS || 120000);
+  const headers = {
+    Authorization: `Bearer ${token}`,
+    Branch: normalizedBranch,
+    Date: normalizedDate
+  };
+  let parsed;
+  try {
+    parsed = parsePagedEmployeeVisits(
+      await slisGet(`/api/List/${page}`, { headers, timeout }),
+      page
+    );
+    if (!parsed.rows) throw new Error('SLIS paginated visit response did not contain a records array.');
+  } catch (error) {
+    if (page !== 1 || process.env.SLIS_VISITS_LEGACY_FALLBACK === 'false') throw error;
+    const rows = await slisGet(`/api/List/${encodeURIComponent(normalizedBranch)}/${normalizedDate}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout
+    });
+    parsed = { rows, page: 1, totalPages: 1, totalRecords: Array.isArray(rows) ? rows.length : null };
+  }
+
+  if (isEmptyListFailure(parsed.rows)) {
+    return { visits: [], pagination: paginationFor(parsed, page, 0) };
+  }
+  const list = parseSlisListResponse(parsed.rows);
+  const clinics = await getClinicDirectory(token).catch(() => []);
+  const visits = normalizeListVisits(list.rows)
+    .map((visit) => ({ ...visit, ...resolveDoctorRecipient(visit, clinics) }));
+  return { visits, pagination: paginationFor(parsed, page, visits.length) };
+}
+
+function paginationFor(parsed, requestedPage, rowCount) {
+  const pageSize = parsed.pageSize || 50;
+  const page = parsed.page || requestedPage;
+  const totalPages = parsed.totalPages || null;
+  return {
+    page,
+    pageSize,
+    totalPages,
+    totalRecords: parsed.totalRecords || null,
+    hasMore: totalPages ? page < totalPages : rowCount >= pageSize
+  };
+}
 
 export async function fetchEmployeeVisits({
   token,
@@ -152,7 +229,8 @@ export function parsePagedEmployeeVisits(payload, requestedPage = 1) {
   ]);
   const totalRecords = firstNumber(containers, [
     'totalRecords', 'TotalRecords', 'totalNumberOfRecords', 'TotalNumberOfRecords',
-    'numberOfRecords', 'NumberOfRecords', 'recordCount', 'RecordCount'
+    'numberOfRecords', 'NumberOfRecords', 'recordCount', 'RecordCount',
+    'totalDayCount', 'TotalDayCount'
   ]);
   const pageSize = firstNumber(containers, [
     'pageSize', 'PageSize', 'recordsPerPage', 'RecordsPerPage',
@@ -160,12 +238,16 @@ export function parsePagedEmployeeVisits(payload, requestedPage = 1) {
     'recordsInPage', 'RecordsInPage', 'numberOfRecordsInPage', 'NumberOfRecordsInPage'
   ]);
 
-  return { rows, page, totalPages, totalRecords, pageSize };
+  const pageRecordsCount = firstNumber(containers, [
+    'pageRecordsCount', 'PageRecordsCount'
+  ]) || (rows?.length ?? 0);
+
+  return { rows, page, totalPages, totalRecords, pageSize, pageRecordsCount };
 }
 
 function findRecordArray(payload) {
   const keys = [
-    'visits', 'Visits', 'patientVisits', 'PatientVisits', 'records', 'Records',
+    'visits', 'Visits', 'patients', 'Patients', 'patientVisits', 'PatientVisits', 'records', 'Records',
     'results', 'Results', 'items', 'Items', 'list', 'List', 'data', 'Data'
   ];
   for (const key of keys) {

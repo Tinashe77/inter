@@ -4,7 +4,7 @@ import { requireAuth } from '../../middleware/requireAuth.js';
 import { slisGet } from '../../services/slisApi.service.js';
 import { normalizeDateForSlis } from '../../utils/formatters.js';
 import { parseSlisListResponse } from '../../utils/slisResponse.js';
-import { fetchEmployeeVisits } from '../../services/employeeVisits.service.js';
+import { fetchEmployeeVisitsPage } from '../../services/employeeVisits.service.js';
 
 export const visitRouter = Router();
 
@@ -24,23 +24,25 @@ visitRouter.get('/', requireAuth(['Clinic_Doctor', 'Employee']), async (req, res
       date: z.string().optional(),
       dateFrom: z.string().optional(),
       dateTo: z.string().optional(),
-      branch: z.string().optional()
+      branch: z.string().optional(),
+      page: z.coerce.number().int().positive().default(1)
     }).parse(req.query);
 
     if (req.user.usertype === 'Employee') {
       const date = query.date || query.dateTo || query.dateFrom;
       const branch = query.branch || 'ALL';
-      if (process.env.NODE_ENV !== 'production') {
-        console.log(`SLIS employee list path: /api/List/${branch}/${date}`);
-      }
-      const visits = await fetchEmployeeVisits({
+      const startedAt = Date.now();
+      const result = await fetchEmployeeVisitsPage({
         token: req.user.token,
         date,
-        branch
+        branch,
+        page: query.page
       });
+      res.setHeader('Server-Timing', `slis;dur=${Date.now() - startedAt}`);
       res.json({
-        message: visits.length ? null : 'No records were found for the selected date.',
-        visits
+        message: result.visits.length ? null : 'No records were found for the selected date.',
+        visits: result.visits,
+        pagination: result.pagination
       });
       return;
     }

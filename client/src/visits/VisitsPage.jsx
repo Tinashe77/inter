@@ -32,10 +32,19 @@ export function VisitsPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyError, setHistoryError] = useState('');
   const [retryingId, setRetryingId] = useState('');
+  const [pagination, setPagination] = useState({ page: 1, hasMore: false, totalRecords: null });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [prefetchError, setPrefetchError] = useState('');
 
   async function loadVisits(range = {}) {
-    setLoading(true);
-    setHasLoaded(false);
+    const requestedPage = range.page || 1;
+    const append = requestedPage > 1;
+    if (append) setLoadingMore(true);
+    else {
+      setLoading(true);
+      setHasLoaded(false);
+      setPrefetchError('');
+    }
     setError('');
     setMessage('');
     try {
@@ -44,18 +53,22 @@ export function VisitsPage() {
       const endpoint = user.usertype === 'Patient'
         ? '/visits/mine'
         : user.usertype === 'Employee'
-          ? `/visits?date=${formatSlisDate(to)}&branch=${encodeURIComponent(employeeBranch || 'ALL')}`
+          ? `/visits?date=${formatSlisDate(to)}&branch=${encodeURIComponent(employeeBranch || 'ALL')}&page=${requestedPage}`
           : `/visits?dateFrom=${from}&dateTo=${to}`;
       const { data } = await http.get(endpoint);
-      setVisits(applyEmployeeBranchFilter(data.visits || [], user.usertype, employeeBranch));
-      setSelected(new Set());
+      const nextVisits = applyEmployeeBranchFilter(data.visits || [], user.usertype, employeeBranch);
+      setVisits((current) => append ? mergeVisits(current, nextVisits) : nextVisits);
+      setPagination(data.pagination || { page: 1, hasMore: false, totalRecords: nextVisits.length });
+      if (!append) setSelected(new Set());
       setMessage(data.message || '');
     } catch (err) {
-      setVisits([]);
-      setError(err.message);
+      if (!append) setVisits([]);
+      if (append) setPrefetchError(err.message);
+      else setError(err.message);
     } finally {
       setHasLoaded(true);
       setLoading(false);
+      setLoadingMore(false);
     }
   }
 
@@ -84,6 +97,12 @@ export function VisitsPage() {
   useEffect(() => {
     if (activeTab === 'history') loadAttempts();
   }, [activeTab]);
+
+  useEffect(() => {
+    if (user.usertype !== 'Employee' || !hasLoaded || loading || loadingMore || !pagination.hasMore || prefetchError) return undefined;
+    const timer = window.setTimeout(() => loadVisits({ page: pagination.page + 1 }), 250);
+    return () => window.clearTimeout(timer);
+  }, [hasLoaded, loading, loadingMore, pagination.page, pagination.hasMore, prefetchError, user.usertype]);
 
   const filtered = useMemo(() => filterVisits(visits, query), [query, visits]);
   const bulkEligible = useMemo(
@@ -204,7 +223,7 @@ export function VisitsPage() {
       {!loading && showVisitControls && hasLoaded && visibleVisits.length === 0 && <p className="panel text-sm text-slate-600">{activeTab === 'bulk' ? 'No completed results have one valid doctor number yet.' : 'No visits found.'}</p>}
 
       {!loading && showVisitControls && (
-        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
           {visibleVisits.map((visit) => activeTab === 'bulk' ? (
             <BulkVisitCard key={visit.LabNumber} visit={visit} selected={selected.has(visit.LabNumber)} onToggle={() => toggleSelected(visit.LabNumber)} />
           ) : (
@@ -213,11 +232,24 @@ export function VisitsPage() {
         </section>
       )}
 
+      {!loading && showVisitControls && user.usertype === 'Employee' && pagination.hasMore && (
+        <button className="btn-secondary mx-auto" disabled={loadingMore} onClick={() => { setPrefetchError(''); loadVisits({ page: pagination.page + 1 }); }}>
+          {loadingMore ? <Loader2 className="animate-spin" size={17} /> : null}
+          {loadingMore ? `Loading remaining results… ${visits.length} ready` : prefetchError ? 'Retry loading remaining results' : 'Load next 50 results'}
+        </button>
+      )}
+
       {activeTab === 'history' && <SendHistory attempts={attempts} loading={historyLoading} error={historyError} retryingId={retryingId} onRetry={retryAttempt} />}
       {reviewVisits.length > 0 && <BulkSendReviewModal visits={reviewVisits} onClose={() => setReviewVisits([])} onApprove={() => sendBulk(reviewVisits)} />}
       {sending && <SendingProgress count={processingCount} />}
     </main>
   );
+}
+
+function mergeVisits(current, incoming) {
+  const merged = new Map(current.map((visit) => [visit.LabNumber, visit]));
+  incoming.forEach((visit) => merged.set(visit.LabNumber, visit));
+  return [...merged.values()];
 }
 
 function BulkSendReviewModal({ visits, onClose, onApprove }) {
@@ -279,16 +311,16 @@ function SendingProgress({ count }) {
 }
 
 function VisitCard({ visit, date, branch, showEmployeeDetails }) {
-  return <Link className="panel block min-w-0 transition hover:-translate-y-0.5 hover:border-interpath-blue" to={`/visits/${visit.LabNumber}`} state={{ visit, date, branch }}>
+  return <Link className="panel block min-w-0 !rounded-xl !p-3 transition hover:-translate-y-0.5 hover:border-interpath-blue" to={`/visits/${visit.LabNumber}`} state={{ visit, date, branch }}>
     <VisitCardHeader visit={visit} />
-    <p className="mt-3 line-clamp-2 text-sm font-normal text-slate-600">{visit.Tests}</p>
-    {showEmployeeDetails && <div className="mt-3 grid gap-2 text-xs text-slate-500"><span className="truncate">{visit.VisitDate}</span><span className="truncate">{visit.Clinic}</span><div className="flex flex-wrap gap-2"><span className="rounded-full bg-blue-50 px-2 py-1 text-interpath-blue">{visit.PaymentMode || 'Payment n/a'}</span><span className="rounded-full bg-slate-50 px-2 py-1 text-slate-600">{visit.Sex || 'Sex n/a'}</span></div></div>}
+    <p className="mt-2 line-clamp-1 text-xs font-normal text-slate-600">{visit.Tests}</p>
+    {showEmployeeDetails && <div className="mt-2 grid gap-1 text-[11px] text-slate-500"><span className="truncate">{visit.VisitDate} · {visit.Clinic}</span><div className="flex flex-wrap gap-1"><span className="rounded-full bg-blue-50 px-2 py-0.5 text-interpath-blue">{visit.PaymentMode || 'Payment n/a'}</span><span className="rounded-full bg-slate-50 px-2 py-0.5 text-slate-600">{visit.Sex || 'Sex n/a'}</span></div></div>}
   </Link>;
 }
 
 function BulkVisitCard({ visit, selected, onToggle }) {
-  return <button type="button" onClick={onToggle} className={`panel block min-w-0 text-left transition hover:-translate-y-0.5 ${selected ? 'border-interpath-blue ring-2 ring-interpath-blue/20' : 'hover:border-blue-200'}`}>
-    <div className="flex items-start gap-3"><input className="mt-1 h-5 w-5 shrink-0 accent-interpath-blue" type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`Select ${visit.LabNumber}`} /><div className="min-w-0 flex-1"><VisitCardHeader visit={visit} /><p className="mt-3 truncate text-sm text-slate-600">{visit.Tests}</p><p className="mt-3 text-sm text-emerald-700"><MessageCircle className="mr-1 inline" size={14} />To {visit.Doctor || visit.RecipientClinicName || 'Doctor'} · {maskPhone(visit.DoctorPhoneNumber)}</p></div></div>
+  return <button type="button" onClick={onToggle} className={`panel block min-w-0 !rounded-xl !p-3 text-left transition hover:-translate-y-0.5 ${selected ? 'border-interpath-blue ring-2 ring-interpath-blue/20' : 'hover:border-blue-200'}`}>
+    <div className="flex items-start gap-2"><input className="mt-0.5 h-4 w-4 shrink-0 accent-interpath-blue" type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`Select ${visit.LabNumber}`} /><div className="min-w-0 flex-1"><VisitCardHeader visit={visit} /><p className="mt-2 truncate text-xs text-slate-600">{visit.Tests}</p><p className="mt-2 truncate text-xs text-emerald-700"><MessageCircle className="mr-1 inline" size={12} />To {visit.Doctor || visit.RecipientClinicName || 'Doctor'} · {maskPhone(visit.DoctorPhoneNumber)}</p></div></div>
   </button>;
 }
 

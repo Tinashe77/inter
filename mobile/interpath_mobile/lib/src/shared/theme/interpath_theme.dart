@@ -7,16 +7,16 @@ class InterpathColors {
   static const darkBlue = Color(0xFF171B55);
   static const royalBlue = Color(0xFF3548D4);
   static const accentRed = Color(0xFFFF4D5D);
-  static const softRed = Color(0xFF3B1722);
-  static const background = Color(0xFF050713);
-  static const surface = Color(0xFF101329);
-  static const surfaceRaised = Color(0xFF181C38);
-  static const textDark = Color(0xFFF7F8FF);
-  static const textMuted = Color(0xFFAAB2CB);
-  static const border = Color(0xFF252B4A);
-  static const glassBorder = Color(0x33FFFFFF);
-  static const softBlue = Color(0xFF1B2457);
-  static const successGreen = Color(0xFF4DD6A4);
+  static const softRed = Color(0xFFFFF1F2);
+  static const background = Color(0xFFF6F8FC);
+  static const surface = Color(0xFFFFFFFF);
+  static const surfaceRaised = Color(0xFFF0F4FF);
+  static const textDark = Color(0xFF172033);
+  static const textMuted = Color(0xFF64748B);
+  static const border = Color(0xFFE2E8F0);
+  static const glassBorder = Color(0xFFDCE4F0);
+  static const softBlue = Color(0xFFEEF2FF);
+  static const successGreen = Color(0xFF15803D);
   static const warningAmber = Color(0xFFFFBD59);
 
   static const brandGradient = LinearGradient(
@@ -37,7 +37,7 @@ class InterpathTheme {
   const InterpathTheme._();
 
   static ThemeData get light {
-    const scheme = ColorScheme.dark(
+    const scheme = ColorScheme.light(
       primary: InterpathColors.primaryBlue,
       secondary: InterpathColors.accentRed,
       surface: InterpathColors.surface,
@@ -50,7 +50,7 @@ class InterpathTheme {
     return ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
-      brightness: Brightness.dark,
+      brightness: Brightness.light,
       scaffoldBackgroundColor: InterpathColors.background,
       fontFamily: 'Roboto',
       dividerColor: InterpathColors.border,
@@ -96,11 +96,11 @@ class InterpathTheme {
         ),
       ),
       cardTheme: CardThemeData(
-        color: InterpathColors.surface.withValues(alpha: 0.88),
+        color: InterpathColors.surface,
         elevation: 0,
         margin: EdgeInsets.zero,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
+          borderRadius: BorderRadius.circular(14),
           side: const BorderSide(color: InterpathColors.glassBorder),
         ),
       ),
@@ -127,7 +127,7 @@ class InterpathTheme {
           ),
         ),
         contentPadding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -135,9 +135,9 @@ class InterpathTheme {
           foregroundColor: Colors.white,
           disabledBackgroundColor: InterpathColors.softBlue,
           elevation: 0,
-          minimumSize: const Size.fromHeight(56),
+          minimumSize: const Size.fromHeight(48),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           textStyle: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
       ),
@@ -153,7 +153,7 @@ class InterpathTheme {
         style: OutlinedButton.styleFrom(
           foregroundColor: InterpathColors.textDark,
           side: const BorderSide(color: InterpathColors.glassBorder),
-          minimumSize: const Size(0, 52),
+          minimumSize: const Size(0, 46),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
           textStyle: const TextStyle(fontWeight: FontWeight.w700),
