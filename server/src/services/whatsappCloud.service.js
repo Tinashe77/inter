@@ -1,4 +1,10 @@
 import axios from 'axios';
+import crypto from 'node:crypto';
+
+const PROVIDERS = {
+  meta: 'meta-cloud-api',
+  whatchimp: 'whatchimp-webhook'
+};
 
 function getConfig() {
   const config = {
@@ -23,6 +29,10 @@ function getConfig() {
 }
 
 export async function sendWhatsAppResultTemplate({ to, recipientName, patientName, labNumber, shareUrl }) {
+  if (whatsAppProvider() === 'whatchimp') {
+    return sendViaWhatChimp({ to, recipientName, patientName, labNumber, shareUrl });
+  }
+
   const config = getConfig();
   const destination = normalizePhone(to);
   if (!destination) {
@@ -66,7 +76,122 @@ export async function sendWhatsAppResultTemplate({ to, recipientName, patientNam
   return {
     messageId: response.data?.messages?.[0]?.id || null,
     contactWaId: response.data?.contacts?.[0]?.wa_id || destination,
+    provider: PROVIDERS.meta,
     response: response.data
+  };
+}
+
+async function sendViaWhatChimp({ to, recipientName, patientName, labNumber, shareUrl }) {
+  const destination = normalizePhone(to);
+  if (!destination) {
+    const error = new Error('A valid WhatsApp destination is required.');
+    error.status = 400;
+    error.code = 'INVALID_WHATSAPP_DESTINATION';
+    throw error;
+  }
+
+  const webhookUrl = String(process.env.WHATCHIMP_WEBHOOK_URL || '').trim();
+  if (!webhookUrl) {
+    const error = new Error('WhatChimp is not configured. Add WHATCHIMP_WEBHOOK_URL.');
+    error.status = 500;
+    error.code = 'WHATSAPP_NOT_CONFIGURED';
+    throw error;
+  }
+  assertSafeWhatChimpUrl(webhookUrl);
+
+  const displayName = String(recipientName || patientName || 'Doctor').trim() || 'Doctor';
+  const payload = {
+    phone: destination,
+    phone_number: destination,
+    recipient_name: displayName,
+    doctor_name: displayName,
+    lab_number: String(labNumber || ''),
+    report_url: String(shareUrl || ''),
+    template_name: process.env.WHATSAPP_TEMPLATE_NAME || 'interpath_result_ready',
+    template_language: process.env.WHATSAPP_TEMPLATE_LANGUAGE || 'en'
+  };
+
+  const headers = { 'Content-Type': 'application/json' };
+  if (process.env.WHATCHIMP_WEBHOOK_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.WHATCHIMP_WEBHOOK_TOKEN}`;
+  }
+
+  let response;
+  try {
+    response = await axios.post(webhookUrl, payload, {
+      headers,
+      timeout: Number(process.env.WHATCHIMP_TIMEOUT_MS || 30000)
+    });
+  } catch (cause) {
+    const error = new Error(whatChimpErrorMessage(cause));
+    error.status = cause.code === 'ECONNABORTED' ? 504 : 502;
+    error.code = 'WHATSAPP_SEND_FAILED';
+    error.details = {
+      provider: 'WhatChimp',
+      status: cause.response?.status,
+      response: safeProviderResponse(cause.response?.data)
+    };
+    console.error('WhatChimp send failed', error.details);
+    throw error;
+  }
+
+  return {
+    messageId: extractWhatChimpMessageId(response.data) || `whatchimp:${crypto.randomUUID()}`,
+    contactWaId: destination,
+    provider: PROVIDERS.whatchimp,
+    response: response.data
+  };
+}
+
+export function whatsAppProvider() {
+  return String(process.env.WHATSAPP_PROVIDER || 'meta').trim().toLowerCase();
+}
+
+function assertSafeWhatChimpUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    const error = new Error('WHATCHIMP_WEBHOOK_URL must be a valid URL.');
+    error.status = 500;
+    error.code = 'WHATSAPP_NOT_CONFIGURED';
+    throw error;
+  }
+  if (url.protocol !== 'https:') {
+    const error = new Error('WHATCHIMP_WEBHOOK_URL must use HTTPS.');
+    error.status = 500;
+    error.code = 'WHATSAPP_NOT_CONFIGURED';
+    throw error;
+  }
+}
+
+function extractWhatChimpMessageId(data) {
+  return data?.message_id
+    || data?.messageId
+    || data?.id
+    || data?.data?.message_id
+    || data?.data?.messageId
+    || data?.data?.id
+    || null;
+}
+
+function whatChimpErrorMessage(cause) {
+  if (cause.code === 'ECONNABORTED') {
+    return 'WhatChimp took too long to accept the WhatsApp message. Please retry.';
+  }
+  const providerMessage = cause.response?.data?.message || cause.response?.data?.error;
+  return providerMessage
+    ? `WhatChimp could not accept the WhatsApp message: ${String(providerMessage)}`
+    : 'WhatChimp could not accept the WhatsApp message. Check the webhook workflow and retry.';
+}
+
+function safeProviderResponse(value) {
+  if (!value || typeof value !== 'object') return undefined;
+  return {
+    message: value.message,
+    error: value.error,
+    code: value.code,
+    status: value.status
   };
 }
 

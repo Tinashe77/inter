@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 
 const whatsappMessageSchema = new mongoose.Schema({
   metaMessageId: { type: String, required: true, unique: true, index: true },
+  provider: { type: String, default: 'meta-cloud-api' },
   recipientWaId: String,
   recipientName: String,
   labNumber: String,

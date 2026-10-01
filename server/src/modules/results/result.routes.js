@@ -106,7 +106,7 @@ resultRouter.post('/whatsapp-attempts/:attemptId/retry', requireAuth(['Employee'
     });
     await writeAudit(req, 'WHATSAPP_SHARE', {
         labNumber: attempt.labNumber,
-        channel: 'meta-cloud-api-retry',
+        channel: `${whatsapp.provider || 'meta-cloud-api'}-retry`,
         phoneNumber: attempt.recipientWaId,
         messageId: whatsapp.messageId
     });
@@ -220,7 +220,7 @@ resultRouter.post('/bulk-whatsapp/send', requireAuth(['Employee']), async (req, 
       });
       await writeAudit(req, 'WHATSAPP_SHARE', {
         labNumber: visit.LabNumber,
-        channel: 'meta-cloud-api-bulk',
+        channel: `${whatsapp.provider || 'meta-cloud-api'}-bulk`,
         phoneNumber: visit.DoctorPhoneNumber,
         messageId: whatsapp.messageId
       });
@@ -543,7 +543,7 @@ resultRouter.post('/:labNumber/send-whatsapp', requireAuth(['Employee']), async 
 
     await writeAudit(req, 'WHATSAPP_SHARE', {
       labNumber,
-      channel: 'meta-cloud-api',
+      channel: whatsapp.provider || 'meta-cloud-api',
       phoneNumber: destination,
       messageId: whatsapp.messageId
     });
@@ -596,6 +596,7 @@ async function recordWhatsAppMessage({
     {
       $set: {
         recipientWaId: whatsapp.contactWaId,
+        provider: whatsapp.provider || 'meta-cloud-api',
         recipientName,
         labNumber,
         shareUrl,
@@ -624,6 +625,7 @@ function recordWhatsAppFailure({
 }) {
   return WhatsAppMessage.create({
     metaMessageId: `local:${crypto.randomUUID()}`,
+    provider: error.details?.provider === 'WhatChimp' ? 'whatchimp-webhook' : 'meta-cloud-api',
     recipientWaId: String(destination || '').replace(/\D/g, ''),
     recipientName,
     labNumber,
@@ -645,6 +647,7 @@ function serializeWhatsAppAttempt(message) {
     labNumber: message.labNumber || '',
     recipientName: message.recipientName || 'Doctor',
     destination: maskPhoneNumber(message.recipientWaId),
+    provider: message.provider || 'meta-cloud-api',
     status: message.status || 'accepted',
     statusTimestamp: message.statusTimestamp || message.updatedAt,
     errorCode: message.errorCode || null,
