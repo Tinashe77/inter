@@ -1,29 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { http } from '../api/http.js';
-
-function getDeviceId() {
-  const existing = localStorage.getItem('interpath_device_id');
-  if (existing) return existing;
-  const generated = crypto.randomUUID();
-  localStorage.setItem('interpath_device_id', generated);
-  return generated;
-}
+import { getDeviceId, storeRegNumber } from './deviceRegistry.js';
 
 export function DeviceRegistrationPage() {
   const [message, setMessage] = useState('');
-  const { register, handleSubmit, setValue, formState: { isSubmitting } } = useForm({
-    defaultValues: { type: 'PWA', countryCode: '+263', defaultUserType: 'Patient' }
+  const { register, handleSubmit, formState: { isSubmitting } } = useForm({
+    defaultValues: { deviceId: getDeviceId(), type: 'PWA', countryCode: '+263', defaultUserType: 'Patient' }
   });
-
-  useEffect(() => {
-    setValue('deviceId', getDeviceId());
-  }, [setValue]);
 
   async function onSubmit(values) {
     const { data } = await http.post('/devices', values);
-    setMessage(data.response || data.message || data.status || 'Device registration submitted.');
+    storeRegNumber(data.regNumber);
+    setMessage(data.regNumber ? `Device registered: ${data.regNumber}` : 'Device registration submitted.');
   }
 
   return (

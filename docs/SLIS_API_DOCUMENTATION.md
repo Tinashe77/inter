@@ -2,16 +2,54 @@
 
 **System:** Interpath SLIS Mobile API  
 **Consumer:** Interpath Results PWA, mobile application, and backend  
-**Document version:** 1.0  
-**Last updated:** 30 September 2026
+**Document version:** 1.1
+**Last updated:** 14 October 2026
+**Status:** Implementation-aligned integration reference
 
 ## 1. Purpose
 
 This document describes the SLIS endpoints currently consumed by the Interpath Results platform. It covers authentication, visits, result details, PDFs, clinics, reports, devices, patient registration, password management, and sample collection.
 
-The contract in this document is derived from the working Interpath integration. The SLIS team should confirm undocumented response properties before treating this as the canonical server specification.
+The contract in this document is derived from the working Interpath integration and the latest device-registration specification supplied by the SLIS team. The SLIS team should confirm undocumented response properties before treating this as the canonical SLIS server specification.
 
-## 2. Environments and base URLs
+## Contents
+
+1. Purpose
+2. Architecture and environments
+3. General conventions
+4. Authentication and accounts
+5. Visits and pagination
+6. Result details and PDFs
+7. Clinics
+8. Reports
+9. Patient registration
+10. Device registration and validation
+11. Sample collection
+12. Error handling
+13. Performance and caching
+14. Security
+15. Postman examples
+16. Change management
+
+## 2. Architecture and environments
+
+### 2.1 Recommended request flow
+
+```text
+PWA / Android / iOS
+        |
+        | HTTPS — Interpath session token
+        v
+Interpath integration API
+        |
+        | HTTPS — SLIS token and SLIS-specific headers
+        v
+SLIS Mobile API
+```
+
+The PWA and native applications must not call SLIS directly. The integration API owns SLIS authentication, response normalisation, caching, timeout handling, auditing, and protection of SLIS tokens.
+
+### 2.2 Base URLs
 
 | Name | URL |
 |---|---|
@@ -27,7 +65,22 @@ SLIS_REPORTS_BASE_URL=https://www.interpathresults.com/SLISMOB
 SLIS_CLINICS_URL=https://www.interpathresults.com/slismob/api/clinics/na
 ```
 
-Do not call SLIS directly from a browser or mobile application. Client applications should call the Interpath integration API so SLIS tokens, error translation, audit logging, caching, and access controls remain server-side.
+### 2.3 Interpath-to-SLIS endpoint map
+
+| Feature | Client-facing integration endpoint | Upstream SLIS endpoint |
+|---|---|---|
+| Login | `POST /api/auth/login` | `POST /api/Main/{userType}` |
+| Patient registration | `POST /api/patients/register` | `POST /api/Main` |
+| Register device | `POST /api/devices` | `POST /api/Devices` |
+| Check by registration number | `GET /api/devices/check/RegNumber?device=...` | `GET /api/Devices/RegNumber` with `Device` header |
+| Check by platform device ID | `GET /api/devices/check/DeviceID?device=...` | `GET /api/Devices/DeviceID` with `Device` header |
+| Employee visits | `GET /api/visits?branch=...&date=...&page=...` | `GET /api/List/{pageNumber}` |
+| Result detail | `GET /api/results/{labNumber}` | Role-dependent `/api/Main/...` endpoint |
+| Result PDF | `GET /api/results/{labNumber}/pdf` | Generated PDF URL returned by SLIS |
+| Clinics | `GET /api/clinics` | `GET /api/clinics/na` |
+| Reports | `POST /api/reports` | `POST /api/Reports` |
+
+All client-facing paths in this table are relative to the Interpath integration API.
 
 ## 3. General request conventions
 
@@ -60,7 +113,12 @@ Every dynamic path segment must be URL-encoded. This includes branch names, user
 |---|---|---|
 | Visit-list path | `DDMMYYYY` | `30092026` |
 | Report body | `YYYY/MM/DD` | `2026/09/30` |
+| Device registration | `DD/MM/YYYY` | `14/10/2026` |
 | Client-facing query | `YYYY-MM-DD` or `DDMMYYYY` | `2026-09-30` |
+
+### 3.5 Header names are case-sensitive contracts
+
+Use the header names documented for each endpoint. In particular, device lookup uses the header `Device`; it does not use `DeviceID` as the header name.
 
 ## 4. Authentication and account endpoints
 
@@ -217,7 +275,7 @@ Visit fields currently consumed:
 ]
 ```
 
-The exact SLIS response may contain additional properties. The application treats statuses containing `complete`, `authorised`, `authorized`, `reported`, `result ready`, `success`, or `final` as completed.
+The exact SLIS response may contain additional properties. The application accepts completed, authorised, reported, result-ready, success, or final statuses. It explicitly rejects statuses containing `partial`, `pending`, or `incomplete`; therefore `PARTIALLY COMPLETED` is not eligible for result delivery.
 
 ### 5.3 Patient visits
 
@@ -441,7 +499,7 @@ Request:
 {
   "IDNumber": "00-000000-A-00",
   "PatientName": "Example Patient",
-  "DateOfBirth": "1990-01-01",
+  "DateOfBirth": "01/01/1990",
   "PhoneNumber": "+263771234567",
   "Email": "patient@example.com",
   "Gender": "Female",
@@ -452,6 +510,15 @@ Request:
 `Gender` is currently expected to be `Male` or `Female` by the consuming application.
 
 ## 10. Device endpoints
+
+Device registration applies to new and existing accounts. A registration belongs to a device or app installation, not globally to the user account. Each additional device or browser installation must be registered separately.
+
+The assigned SLIS `RegNumber` must be stored on the device after successful registration:
+
+- Flutter mobile application: encrypted secure storage;
+- PWA: persistent browser storage associated with that installation.
+
+On subsequent application launches, the stored registration number is checked against SLIS. A temporary check failure should be reported or retried without deleting the stored registration number.
 
 ### 10.1 Register device
 
@@ -465,23 +532,74 @@ Request:
 {
   "RegNumber": "",
   "DeviceID": "DEVICE_IDENTIFIER",
-  "Type": "PWA",
+  "Type": "Android",
   "PhoneNumber": "771234567",
-  "CountryCode": "263",
+  "CountryCode": "+263",
   "DeviceStatus": "",
   "DefaultUserType": "Patient",
-  "RegDate": ""
+  "RegDate": "14/10/2026"
 }
 ```
 
-`DefaultUserType` must be `Patient`, `Clinic_Doctor`, or `Employee`.
+Field contract:
 
-### 10.2 Get device
+| Field | Required value |
+|---|---|
+| `RegNumber` | Blank when registering; generated by SLIS |
+| `DeviceID` | Android ID, iOS identifier, or stable PWA installation UUID |
+| `Type` | `Android`, `IOS`, `PWA`, or another agreed platform name |
+| `PhoneNumber` | Owner phone number as a JSON string |
+| `CountryCode` | Dialling code including `+`, for example `+263` |
+| `DeviceStatus` | Blank when registering; managed by SLIS |
+| `DefaultUserType` | `Patient`, `Clinic_Doctor`, or `Employee` |
+| `RegDate` | Registration date in `DD/MM/YYYY` format |
+
+The application must persist the `RegNumber` returned by SLIS. If SLIS accepts the request but does not return a registration number, the device must not be considered fully registered.
+
+### 10.2 Check device using the SLIS registration number
 
 ```http
-GET /api/Devices/{deviceId}
-DeviceID: {deviceId}
+GET /api/Devices/RegNumber
+Device: {SLIS_REGISTRATION_NUMBER}
 ```
+
+Example:
+
+```http
+GET /api/Devices/RegNumber
+Device: DEV-000123
+```
+
+### 10.3 Check device using the platform device ID
+
+```http
+GET /api/Devices/DeviceID
+Device: {ANDROID_ID_OR_IOS_ID}
+```
+
+The final URL segment determines what the `Device` header contains:
+
+| Final URL segment | `Device` header value |
+|---|---|
+| `RegNumber` | SLIS-assigned registration number |
+| `DeviceID` | Android ID, iOS identifier, or stable installation identifier |
+
+### 10.4 Registration flows
+
+**New PWA patient account**
+
+1. Create the patient account.
+2. Register the current browser installation with SLIS.
+3. Store the returned `RegNumber`.
+4. Validate it on future launches.
+
+**Existing account or native mobile application**
+
+1. Select **Register this device**.
+2. Supply the owner phone number, country code, and default user type.
+3. Register the platform device ID with SLIS.
+4. Store the returned `RegNumber` securely.
+5. Validate it on future launches.
 
 ## 11. Sample collection request
 
@@ -560,6 +678,7 @@ Recommended SLIS-side actions for `GET /api/List/{branch}/{date}`:
 
 - Use HTTPS for all environments containing personal or medical information.
 - Never place an SLIS token in a query string, log, repository, analytics event, or client-visible error.
+- Never expose the SLIS device registration number in analytics or public logs.
 - Restrict endpoint access by user type and laboratory relationship.
 - Validate the association between a laboratory result and its intended clinic or doctor before sharing.
 - Do not send walk-in patient results through the healthcare-provider WhatsApp workflow.
@@ -577,6 +696,8 @@ slisToken   = <token returned by login>
 branch      = HARARE
 date        = 30092026
 labNumber   = ILH26000000
+deviceId    = <Android ID, iOS identifier, or test installation UUID>
+deviceRegNo = <SLIS-assigned registration number>
 ```
 
 Employee visits, page 1:
@@ -594,6 +715,31 @@ Employee result detail:
 GET {{slisBaseUrl}}/api/Main/{{labNumber}}?format=pdf
 Authorization: Bearer {{slisToken}}
 format: pdf
+```
+
+Register a device:
+
+```http
+POST {{slisBaseUrl}}/api/Devices
+Content-Type: application/json
+
+{
+  "RegNumber": "",
+  "DeviceID": "{{deviceId}}",
+  "Type": "Android",
+  "PhoneNumber": "771234567",
+  "CountryCode": "+263",
+  "DeviceStatus": "",
+  "DefaultUserType": "Patient",
+  "RegDate": "14/10/2026"
+}
+```
+
+Check a registered device:
+
+```http
+GET {{slisBaseUrl}}/api/Devices/RegNumber
+Device: {{deviceRegNo}}
 ```
 
 Do not export an environment containing a real token when sharing a Postman collection.

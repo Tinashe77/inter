@@ -4,6 +4,7 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { http } from '../api/http.js';
+import { registerCurrentDevice } from '../devices/deviceRegistry.js';
 
 const schema = z.object({
   idNumber: z.string().min(1),
@@ -12,19 +13,21 @@ const schema = z.object({
   phoneNumber: z.string().min(1),
   email: z.string().email(),
   gender: z.enum(['Male', 'Female']),
-  password: z.string().min(8)
+  password: z.string().min(8),
+  countryCode: z.string().min(2)
 });
 
 export function PatientRegisterPage() {
   const [message, setMessage] = useState('');
   const { register, handleSubmit, formState: { isSubmitting } } = useForm({
     resolver: zodResolver(schema),
-    defaultValues: { gender: 'Male' }
+    defaultValues: { gender: 'Male', countryCode: '+263' }
   });
 
   async function onSubmit(values) {
     const { data } = await http.post('/patients/register', values);
-    setMessage(data.response || data.message || 'Registration submitted.');
+    const device = await registerCurrentDevice({ phoneNumber: values.phoneNumber, countryCode: values.countryCode, defaultUserType: 'Patient' });
+    setMessage(device.regNumber ? `Account and device registered successfully (${device.regNumber}).` : data.response || data.message || 'Registration submitted.');
   }
 
   return (
@@ -33,6 +36,7 @@ export function PatientRegisterPage() {
       <input className="field" placeholder="Patient name" {...register('patientName')} />
       <input className="field" placeholder="Date of birth dd/MM/yyyy" {...register('dateOfBirth')} />
       <input className="field" placeholder="Phone number" {...register('phoneNumber')} />
+      <input className="field" placeholder="Country code" {...register('countryCode')} />
       <input className="field" placeholder="Email" type="email" {...register('email')} />
       <select className="field" {...register('gender')}>
         <option value="Male">Male</option>

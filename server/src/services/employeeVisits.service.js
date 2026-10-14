@@ -348,6 +348,9 @@ function removeCacheEntry(cacheKey) {
 
 export function isCompletedVisit(visit) {
   const status = String(visit?.Status || '').trim().toLowerCase();
+  if (status.includes('partial') || status.includes('pending') || status.includes('incomplete')) {
+    return false;
+  }
   return status.includes('complete')
     || status.includes('authorised')
     || status.includes('authorized')

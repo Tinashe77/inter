@@ -184,9 +184,10 @@ export function VisitsPage() {
 
   const showVisitControls = activeTab !== 'history';
   const visibleVisits = activeTab === 'bulk' ? bulkEligible : filtered;
+  const showBulkDock = activeTab === 'bulk' && selectedEligible.length > 0 && !sending;
 
   return (
-    <main className="space-y-3 sm:space-y-4">
+    <main className={`space-y-3 sm:space-y-4 ${showBulkDock ? 'pb-28 md:pb-24' : ''}`}>
       <section className="hero-band flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-normal text-interpath-blue">{user.usertype === 'Employee' ? 'Laboratory result centre' : 'Laboratory visits'}</p>
@@ -218,9 +219,9 @@ export function VisitsPage() {
         <section className="panel space-y-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <label className="flex cursor-pointer items-center gap-3"><input className="h-5 w-5 accent-interpath-blue" type="checkbox" checked={allSelected} onChange={toggleAll} disabled={!bulkEligible.length} /><span><strong className="font-medium">Select all valid</strong><span className="block text-xs text-slate-500">{bulkEligible.length} completed result{bulkEligible.length === 1 ? '' : 's'} ready</span></span></label>
-            <button className="btn-primary" onClick={openBulkReview} disabled={sending || selectedEligible.length === 0}><Send size={16} />{sending ? 'Processing results…' : `Send via WhatsApp (${selectedEligible.length})`}</button>
+            <span className="text-sm font-medium text-interpath-blue">{selectedEligible.length} selected</span>
           </div>
-          <p className="text-xs text-slate-500">Only completed results with exactly one server-validated doctor number appear here. Each recipient gets a separate secure report link through the official WhatsApp Cloud API.</p>
+          <p className="text-xs text-slate-500">Only completed results with exactly one server-validated doctor number appear here. Each recipient gets a separate secure report link through the configured WhatsApp provider.</p>
         </section>
       )}
 
@@ -248,9 +249,25 @@ export function VisitsPage() {
       )}
 
       {activeTab === 'history' && <SendHistory attempts={attempts} loading={historyLoading} error={historyError} retryingId={retryingId} onRetry={retryAttempt} />}
+      {showBulkDock && <BulkSelectionDock count={selectedEligible.length} loadingMore={loadingMore || pagination.hasMore} onReview={openBulkReview} />}
       {reviewVisits.length > 0 && <BulkSendReviewModal visits={reviewVisits} onClose={() => setReviewVisits([])} onApprove={() => sendBulk(reviewVisits)} />}
       {sending && <SendingProgress count={processingCount} />}
     </main>
+  );
+}
+
+function BulkSelectionDock({ count, loadingMore, onReview }) {
+  return (
+    <aside className="fixed bottom-24 left-3 right-3 z-40 md:bottom-6 md:left-auto md:right-6 md:w-[440px]" aria-label="Bulk send selection">
+      <div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-white/95 p-3 shadow-2xl shadow-blue-950/20 backdrop-blur-xl">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 font-semibold text-interpath-blue">{count}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-900">Ready to review</p>
+          <p className="truncate text-xs text-slate-500">{loadingMore ? 'More results are still loading' : 'Confirm recipients before sending'}</p>
+        </div>
+        <button type="button" className="btn-primary shrink-0 px-3" onClick={onReview}><ShieldCheck size={16} />Review &amp; send</button>
+      </div>
+    </aside>
   );
 }
 
@@ -337,7 +354,7 @@ function VisitCardHeader({ visit }) {
 }
 
 function SendSummary({ summary, onHistory }) {
-  return <section className={`panel border-l-4 ${summary.failed ? 'border-l-amber-500' : 'border-l-emerald-500'}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{summary.sent || 0} accepted by WhatsApp · {summary.failed || 0} failed</p><p className="mt-1 text-sm text-slate-600">Accepted means Meta received the request. Open Send history for confirmed delivery.</p>{summary.message && <p className="mt-2 text-sm text-red-600">{summary.message}</p>}</div><button className="btn-secondary" onClick={onHistory}><History size={16} />View send history</button></div>{summary.results?.some((item) => item.status !== 'sent') && <ul className="mt-3 space-y-1 text-sm text-red-600">{summary.results.filter((item) => item.status !== 'sent').map((item) => <li key={item.labNumber}>{item.labNumber}: {item.message || 'Not sent'}</li>)}</ul>}</section>;
+  return <section className={`panel border-l-4 ${summary.failed ? 'border-l-amber-500' : 'border-l-emerald-500'}`}><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{summary.sent || 0} accepted by WhatsApp · {summary.failed || 0} failed</p><p className="mt-1 text-sm text-slate-600">Accepted means the configured provider received the request. Open Send history for available delivery updates.</p>{summary.message && <p className="mt-2 text-sm text-red-600">{summary.message}</p>}</div><button className="btn-secondary" onClick={onHistory}><History size={16} />View send history</button></div>{summary.results?.some((item) => item.status !== 'sent') && <ul className="mt-3 space-y-1 text-sm text-red-600">{summary.results.filter((item) => item.status !== 'sent').map((item) => <li key={item.labNumber}>{item.labNumber}: {item.message || 'Not sent'}</li>)}</ul>}</section>;
 }
 
 function SendHistory({ attempts, loading, error, retryingId, onRetry }) {
@@ -345,7 +362,7 @@ function SendHistory({ attempts, loading, error, retryingId, onRetry }) {
   const delivered = attempts.filter((item) => ['delivered', 'read'].includes(item.status)).length;
   const failed = attempts.filter((item) => item.status === 'failed').length;
   const pending = attempts.filter((item) => ['accepted', 'sent'].includes(item.status)).length;
-  return <section className="space-y-3">{error && <Notice tone="error">{error}</Notice>}<div className="panel"><h3 className="font-medium">WhatsApp delivery tracking</h3><p className="mt-1 text-sm text-slate-600">Delivered and read are confirmed by Meta webhook updates.</p><div className="mt-4 grid grid-cols-3 gap-2"><HistoryMetric label="Successful" count={delivered} icon={CheckCircle2} tone="emerald" /><HistoryMetric label="Pending" count={pending} icon={Clock3} tone="blue" /><HistoryMetric label="Failed" count={failed} icon={XCircle} tone="red" /></div></div>{!attempts.length ? <p className="panel text-sm text-slate-600">No WhatsApp send attempts have been recorded yet.</p> : <div className="grid gap-3 sm:grid-cols-2">{attempts.map((attempt) => <AttemptCard key={attempt.id} attempt={attempt} retrying={retryingId === attempt.id} onRetry={() => onRetry(attempt)} />)}</div>}</section>;
+  return <section className="space-y-3">{error && <Notice tone="error">{error}</Notice>}<div className="panel"><h3 className="font-medium">WhatsApp delivery tracking</h3><p className="mt-1 text-sm text-slate-600">Delivered and read appear when the configured provider sends status updates.</p><div className="mt-4 grid grid-cols-3 gap-2"><HistoryMetric label="Successful" count={delivered} icon={CheckCircle2} tone="emerald" /><HistoryMetric label="Pending" count={pending} icon={Clock3} tone="blue" /><HistoryMetric label="Failed" count={failed} icon={XCircle} tone="red" /></div></div>{!attempts.length ? <p className="panel text-sm text-slate-600">No WhatsApp send attempts have been recorded yet.</p> : <div className="grid gap-3 sm:grid-cols-2">{attempts.map((attempt) => <AttemptCard key={attempt.id} attempt={attempt} retrying={retryingId === attempt.id} onRetry={() => onRetry(attempt)} />)}</div>}</section>;
 }
 
 function HistoryMetric({ label, count, icon: Icon, tone }) {
@@ -366,7 +383,7 @@ function AttemptCard({ attempt, retrying, onRetry }) {
 function Notice({ children, tone = 'info' }) { return <p className={`rounded-lg p-3 text-sm ring-1 ${tone === 'error' ? 'bg-red-50 text-red-700 ring-red-100' : 'bg-blue-50 text-interpath-blue ring-blue-100'}`}>{children}</p>; }
 function LoadingState({ label }) { return <section className="panel flex items-center gap-3 text-sm text-slate-600"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-interpath-blue"><RefreshCw className="animate-spin" size={18} /></span><span>{label}</span></section>; }
 function filterVisits(visits, query) { const term = query.trim().toLowerCase(); if (!term) return visits; return visits.filter((visit) => [visit.PatientName, visit.LabNumber, visit.PhoneNumber, visit.VisitDate, visit.Tests, visit.Clinic].some((value) => String(value || '').toLowerCase().includes(term))); }
-function isCompleted(status) { const value = String(status || '').trim().toLowerCase(); return value.includes('complete') || value.includes('authorised') || value.includes('authorized') || value.includes('reported') || value.includes('result ready') || value === 'success' || value === 'final'; }
+function isCompleted(status) { const value = String(status || '').trim().toLowerCase(); if (value.includes('partial') || value.includes('pending') || value.includes('incomplete')) return false; return value.includes('complete') || value.includes('authorised') || value.includes('authorized') || value.includes('reported') || value.includes('result ready') || value === 'success' || value === 'final'; }
 function maskPhone(value) { const digits = String(value || '').replace(/\D/g, ''); return digits.length < 7 ? digits : `+${digits.slice(0, 5)}•••${digits.slice(-3)}`; }
 function formatTimestamp(value) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'recently' : date.toLocaleString(); }
 function todayIso() { return new Date().toISOString().slice(0, 10); }

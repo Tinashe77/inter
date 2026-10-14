@@ -57,7 +57,7 @@ class InterpathShell extends StatelessWidget {
                 left: 14,
                 right: 14,
                 bottom: 14,
-                child: IgnorePointer(child: overlay),
+                child: overlay!,
               ),
           ],
         ),

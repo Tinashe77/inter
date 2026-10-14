@@ -29,6 +29,11 @@ class Visit {
 
   bool get isCompleted {
     final value = status.trim().toLowerCase();
+    if (value.contains('partial') ||
+        value.contains('pending') ||
+        value.contains('incomplete')) {
+      return false;
+    }
     return value.contains('complete') ||
         value.contains('authorised') ||
         value.contains('authorized') ||

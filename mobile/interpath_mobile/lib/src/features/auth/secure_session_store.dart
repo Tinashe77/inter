@@ -12,6 +12,8 @@ class SecureSessionStore {
   static const _tokenKey = 'interpath_token';
   static const _userTypeKey = 'interpath_user_type';
   static const _employeeBranchKey = 'interpath_employee_branch';
+  static const _deviceRegNumberKey = 'interpath_slis_device_reg_number';
+  static const _deviceIdKey = 'interpath_device_id';
 
   Future<void> saveSession({
     required String token,
@@ -36,6 +38,19 @@ class SecureSessionStore {
   Future<String?> readEmployeeBranch() {
     return _storage.read(key: _employeeBranchKey);
   }
+
+  Future<void> saveDeviceRegistration({
+    required String regNumber,
+    required String deviceId,
+  }) async {
+    await _storage.write(key: _deviceRegNumberKey, value: regNumber);
+    await _storage.write(key: _deviceIdKey, value: deviceId);
+  }
+
+  Future<String?> readDeviceRegNumber() =>
+      _storage.read(key: _deviceRegNumberKey);
+
+  Future<String?> readDeviceId() => _storage.read(key: _deviceIdKey);
 
   Future<void> clear() async {
     await _storage.delete(key: _tokenKey);

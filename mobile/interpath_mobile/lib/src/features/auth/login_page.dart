@@ -170,6 +170,12 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 : 'Sign in securely',
                           ),
                         ),
+                        TextButton(
+                          onPressed: authState.isLoading
+                              ? null
+                              : () => context.go('/device-registration'),
+                          child: const Text('Register this device'),
+                        ),
                       ],
                     ),
                   ),

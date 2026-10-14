@@ -3,33 +3,33 @@ import 'package:flutter/material.dart';
 class InterpathColors {
   const InterpathColors._();
 
-  static const primaryBlue = Color(0xFF6577FF);
-  static const darkBlue = Color(0xFF171B55);
-  static const royalBlue = Color(0xFF3548D4);
-  static const accentRed = Color(0xFFFF4D5D);
-  static const softRed = Color(0xFFFFF1F2);
-  static const background = Color(0xFFF6F8FC);
+  static const primaryBlue = Color(0xFF2E3092);
+  static const darkBlue = Color(0xFF313179);
+  static const royalBlue = Color(0xFF2563EB);
+  static const accentRed = Color(0xFFED1B23);
+  static const softRed = Color(0xFFFFE8E8);
+  static const background = Color(0xFFF7F8FC);
   static const surface = Color(0xFFFFFFFF);
-  static const surfaceRaised = Color(0xFFF0F4FF);
-  static const textDark = Color(0xFF172033);
+  static const surfaceRaised = Color(0xFFEFF6FF);
+  static const textDark = Color(0xFF1F2937);
   static const textMuted = Color(0xFF64748B);
   static const border = Color(0xFFE2E8F0);
-  static const glassBorder = Color(0xFFDCE4F0);
-  static const softBlue = Color(0xFFEEF2FF);
+  static const glassBorder = Color(0xFFDBEAFE);
+  static const softBlue = Color(0xFFEFF6FF);
   static const successGreen = Color(0xFF15803D);
   static const warningAmber = Color(0xFFFFBD59);
 
   static const brandGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF1C226A), royalBlue, Color(0xFF6B2D78)],
-    stops: [0, 0.62, 1],
+    colors: [primaryBlue, royalBlue, Color(0xFF38BDF8)],
+    stops: [0, 0.58, 1],
   );
 
   static const accentGradient = LinearGradient(
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
-    colors: [Color(0xFF5368FF), Color(0xFF9C55DE), accentRed],
+    colors: [primaryBlue, royalBlue, Color(0xFF38BDF8)],
   );
 }
 
@@ -167,7 +167,7 @@ class InterpathTheme {
         labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       ),
       snackBarTheme: SnackBarThemeData(
-        backgroundColor: InterpathColors.surfaceRaised,
+        backgroundColor: InterpathColors.darkBlue,
         contentTextStyle: const TextStyle(color: Colors.white),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
