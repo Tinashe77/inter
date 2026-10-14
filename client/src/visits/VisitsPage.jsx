@@ -343,8 +343,8 @@ function VisitCard({ visit, date, branch, showEmployeeDetails }) {
 }
 
 function BulkVisitCard({ visit, selected, onToggle }) {
-  return <button type="button" onClick={onToggle} className={`panel block min-w-0 !rounded-xl !p-3 text-left transition hover:-translate-y-0.5 ${selected ? 'border-interpath-blue ring-2 ring-interpath-blue/20' : 'hover:border-blue-200'}`}>
-    <div className="flex items-start gap-2"><input className="mt-0.5 h-4 w-4 shrink-0 accent-interpath-blue" type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`Select ${visit.LabNumber}`} /><div className="min-w-0 flex-1"><VisitCardHeader visit={visit} /><p className="mt-2 truncate text-xs text-slate-600">{visit.Tests}</p><p className="mt-2 truncate text-xs text-emerald-700"><MessageCircle className="mr-1 inline" size={12} />To {visit.Doctor || visit.RecipientClinicName || 'Doctor'} · {maskPhone(visit.DoctorPhoneNumber)}</p></div></div>
+  return <button type="button" onClick={onToggle} className={`panel block w-full min-w-0 overflow-hidden !rounded-xl !p-3 text-left transition hover:-translate-y-0.5 ${selected ? 'border-interpath-blue ring-2 ring-interpath-blue/20' : 'hover:border-blue-200'}`}>
+    <div className="flex min-w-0 items-start gap-2"><input className="mt-0.5 h-4 w-4 shrink-0 accent-interpath-blue" type="checkbox" checked={selected} onChange={onToggle} onClick={(event) => event.stopPropagation()} aria-label={`Select ${visit.LabNumber}`} /><div className="min-w-0 flex-1 overflow-hidden"><VisitCardHeader visit={visit} /><p className="mt-2 truncate text-xs text-slate-600">{visit.Tests}</p><p className="mt-2 truncate text-xs text-emerald-700"><MessageCircle className="mr-1 inline" size={12} />To {visit.Doctor || visit.RecipientClinicName || 'Doctor'} · {maskPhone(visit.DoctorPhoneNumber)}</p></div></div>
   </button>;
 }
 
