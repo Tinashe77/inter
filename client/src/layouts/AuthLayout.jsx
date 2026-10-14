@@ -4,17 +4,14 @@ import { InstallAppButton } from '../components/InstallAppButton.jsx';
 
 export function AuthLayout() {
   return (
-    <main className="app-bg min-h-screen px-4 py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-md flex-col justify-center">
-        <div className="hero-band mb-5">
-          <div className="flex items-start justify-between gap-3">
-            <BrandLogo />
-            <InstallAppButton compact />
-          </div>
-          <h1 className="mt-8 max-w-xs text-3xl font-normal leading-tight text-interpath-text">Welcome back, ready to continue</h1>
-          <p className="mt-3 text-sm font-normal text-slate-600">Secure laboratory results, visits, and reports in one clinical workspace.</p>
+    <main className="mobile-login-bg min-h-screen px-5 py-5 sm:py-8">
+      <div className="mx-auto w-full max-w-md">
+        <div className="flex items-center justify-between gap-3 pb-7 text-white">
+          <BrandLogo />
+          <InstallAppButton compact />
         </div>
         <Outlet />
+        <p className="mt-5 text-center text-xs font-semibold text-slate-500">Protected clinical access</p>
       </div>
     </main>
   );

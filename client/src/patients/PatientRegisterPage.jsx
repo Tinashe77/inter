@@ -4,7 +4,6 @@ import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { http } from '../api/http.js';
-import { registerCurrentDevice } from '../devices/deviceRegistry.js';
 
 const schema = z.object({
   idNumber: z.string().min(1),
@@ -26,8 +25,7 @@ export function PatientRegisterPage() {
 
   async function onSubmit(values) {
     const { data } = await http.post('/patients/register', values);
-    const device = await registerCurrentDevice({ phoneNumber: values.phoneNumber, countryCode: values.countryCode, defaultUserType: 'Patient' });
-    setMessage(device.regNumber ? `Account and device registered successfully (${device.regNumber}).` : data.response || data.message || 'Registration submitted.');
+    setMessage(data.response || data.message || 'Registration submitted.');
   }
 
   return (

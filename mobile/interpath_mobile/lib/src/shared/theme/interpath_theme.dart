@@ -110,7 +110,7 @@ class InterpathTheme {
         labelStyle: const TextStyle(color: InterpathColors.textMuted),
         hintStyle: const TextStyle(color: Color(0xFF77809C)),
         prefixIconColor: InterpathColors.primaryBlue,
-        suffixIconColor: InterpathColors.textMuted,
+        suffixIconColor: InterpathColors.primaryBlue,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(radius),
           borderSide: const BorderSide(color: InterpathColors.glassBorder),

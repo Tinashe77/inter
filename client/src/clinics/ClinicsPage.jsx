@@ -58,8 +58,8 @@ export function ClinicsPage() {
 
       <section className="panel">
         <label className="relative block">
-          <Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={18} />
-          <input className="field pl-10" placeholder="Search clinic, doctor, address, phone, or email" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <Search className="pointer-events-none absolute right-3 top-2.5 text-slate-400" size={18} />
+          <input className="field pr-10" placeholder="Search clinic, doctor, address, phone, or email" value={query} onChange={(event) => setQuery(event.target.value)} />
         </label>
       </section>
 

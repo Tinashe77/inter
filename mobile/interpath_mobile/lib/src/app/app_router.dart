@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../features/auth/auth_controller.dart';
 import '../features/auth/login_page.dart';
 import '../features/dashboard/dashboard_page.dart';
-import '../features/devices/device_registration_page.dart';
 import '../features/pdf/pdf_preview_page.dart';
 import '../features/results/result_detail_page.dart';
 import '../features/visits/branch_selection_page.dart';
@@ -21,8 +20,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     initialLocation: '/login',
     redirect: (context, state) {
       final isLoggedIn = authState.asData?.value != null && !sessionExpired;
-      final isPublic = state.matchedLocation == '/login' ||
-          state.matchedLocation == '/device-registration';
+      final isPublic = state.matchedLocation == '/login';
 
       if (!isLoggedIn && !isPublic) {
         return '/login';
@@ -38,10 +36,6 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/login',
         builder: (context, state) => const LoginPage(),
-      ),
-      GoRoute(
-        path: '/device-registration',
-        builder: (context, state) => const DeviceRegistrationPage(),
       ),
       GoRoute(
         path: '/',

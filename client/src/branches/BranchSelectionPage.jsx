@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, CheckCircle2 } from 'lucide-react';
+import { CheckCircle2, MapPin } from 'lucide-react';
 import { useAuthStore } from '../auth/authStore.js';
 
 const quickBranches = ['HARARE', 'BULAWAYO', 'MUTARE', 'CHITUNGWIZA', 'GWERU', 'BINDURA', 'MASVINGO', 'KWEKWE', 'ALL'];
@@ -24,40 +24,25 @@ export function BranchSelectionPage() {
   }
 
   return (
-    <main className="space-y-3 sm:space-y-4">
-      <section className="hero-band">
-        <p className="text-sm font-normal text-interpath-blue">Employee branch</p>
-        <h2 className="mt-1 text-2xl font-normal leading-tight sm:text-3xl">Select your branch</h2>
-        <p className="mt-2 max-w-xl text-sm font-normal text-slate-600">Daily visits will be pulled from SLIS using the branch selected here.</p>
-      </section>
-
-      <form className="panel space-y-4" onSubmit={submitBranch}>
-        <div className="metric-strip flex items-center gap-3">
-          <span className="icon-bubble">
-            <Building2 size={19} />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm text-interpath-text">Current selection</span>
-            <span className="block truncate text-xs font-normal text-slate-500">{branch || 'No branch selected'}</span>
-          </span>
-        </div>
-
+    <main className="space-y-5">
+      <section><p className="text-sm font-medium text-interpath-blue">Employee branch</p><h2 className="mt-2 text-3xl font-bold tracking-tight">Select your branch</h2><p className="mt-2 text-sm text-slate-500">Daily visits will be requested from SLIS for this branch.</p></section>
+      <form className="space-y-5" onSubmit={submitBranch}>
         <div>
-          <label className="mb-1 block text-sm font-normal">Branch or location</label>
-          <input className="field" value={branch} onChange={(event) => setBranch(event.target.value)} placeholder="ALL, HARARE, BULAWAYO..." />
+          <label className="mb-1.5 block text-sm font-medium">Branch or location</label>
+          <div className="relative"><MapPin className="pointer-events-none absolute right-4 top-3.5 text-interpath-blue" size={19} /><input className="field pr-12" value={branch} onChange={(event) => setBranch(event.target.value.toUpperCase())} placeholder="ALL, HARARE, BULAWAYO..." /></div>
         </div>
 
         <div className="flex flex-wrap gap-2">
           {quickBranches.map((item) => (
-            <button className="btn-secondary min-h-9 px-3 py-2 text-xs" type="button" onClick={() => setBranch(item)} key={item}>
-              {item}
+            <button className={`min-h-10 rounded-2xl border px-4 py-2 text-xs font-semibold transition ${branch === item ? 'border-interpath-blue bg-interpath-blue text-white shadow-lg shadow-blue-500/20' : 'border-blue-100 bg-white text-slate-600'}`} type="button" onClick={() => setBranch(item)} key={item}>
+              {branch === item && <CheckCircle2 className="mr-1 inline" size={14} />}{item}
             </button>
           ))}
         </div>
 
         {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-interpath-red">{error}</p>}
 
-        <button className="btn-primary w-full sm:w-auto" type="submit">
+        <button className="btn-primary w-full" type="submit">
           <CheckCircle2 size={16} />
           Continue to visits
         </button>

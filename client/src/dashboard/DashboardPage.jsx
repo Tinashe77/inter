@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { ArrowRight, ClipboardCheck, ClipboardList, FileArchive, FileCheck, FileText, MessageCircle, Search, ShieldCheck, Truck } from 'lucide-react';
+import { ArrowRight, Building2, ClipboardList, FileCheck, FileText, FlaskConical, KeyRound, LockKeyhole, MessageCircle, Search, Truck } from 'lucide-react';
 import { useAuthStore } from '../auth/authStore.js';
 
 export function DashboardPage() {
@@ -7,86 +7,63 @@ export function DashboardPage() {
   const cards = getCards(user?.usertype);
 
   return (
-    <main className="space-y-3 sm:space-y-4">
-      <section className="hero-band">
-        <p className="text-sm font-normal text-interpath-blue">Interpath workspace</p>
-        <h2 className="mt-2 max-w-xl text-2xl font-normal leading-tight sm:text-3xl">Welcome back, ready to continue</h2>
-        <p className="mt-3 max-w-xl text-sm font-normal text-slate-600">Open visits, review results, download official reports, and share secure PDF links from one mobile-friendly workspace.</p>
+    <main className="space-y-6">
+      <section className="relative overflow-hidden rounded-[26px] bg-gradient-to-br from-[#2E3092] via-[#2563EB] to-[#38BDF8] p-6 text-white shadow-xl shadow-blue-500/20">
+        <span className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
+        <p className="inline-flex rounded-full bg-white/15 px-3 py-1.5 text-[11px] font-bold tracking-[0.12em] text-blue-100">CLINICAL WORKSPACE</p>
+        <h2 className="mt-5 text-3xl font-bold leading-tight">{welcomeName(user)}</h2>
+        <p className="mt-2 max-w-sm text-sm leading-6 text-blue-100">Review visits, open verified results, and share reports securely.</p>
       </section>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="flex items-center justify-between"><h3 className="text-xl font-bold">Quick actions</h3><span className="text-xs font-bold text-emerald-700">Secure access</span></div>
+      <section className="space-y-3">
         {cards.map((card, index) => {
           const Icon = card.icon;
           const color = colorClasses[index % colorClasses.length];
           return (
-            <Link className={`panel flex min-h-36 flex-col justify-between gap-6 transition hover:-translate-y-0.5 hover:border-interpath-blue sm:min-h-40 ${color.card}`} to={card.to} key={card.title}>
-              <div className="flex items-start justify-between gap-3">
-                <span className={`icon-bubble ${color.icon}`}>
-                  <Icon size={21} />
-                </span>
-                <ArrowRight className={color.arrow} size={18} />
-              </div>
-              <div>
-                <h3 className="font-normal">{card.title}</h3>
-                <p className="mt-1 text-sm font-normal text-slate-600">{card.detail}</p>
-              </div>
+            <Link className="panel flex items-center gap-4 !p-4 transition hover:border-interpath-blue" to={card.to} key={card.title}>
+              <span className={`flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl p-3 ${color.icon}`}><Icon size={24} /></span>
+              <span className="min-w-0 flex-1"><strong className="block font-semibold">{card.title}</strong><span className="mt-1 block text-sm text-slate-500">{card.detail}</span></span>
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-50"><ArrowRight size={18} /></span>
             </Link>
           );
         })}
-      </section>
-      <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-        <article className="panel color-card-blue">
-          <div className="flex items-start gap-3">
-            <span className="icon-bubble icon-bubble-blue">
-              <ShieldCheck size={21} />
-            </span>
-            <div>
-              <h3 className="font-normal">Built for clinical privacy</h3>
-              <p className="mt-1 text-sm text-slate-600">The app avoids permanent result storage on the device, keeps sessions protected, and shares only official PDF report links.</p>
-            </div>
-          </div>
-        </article>
-        <article className="panel color-card-green">
-          <div className="flex items-start gap-3">
-            <span className="icon-bubble icon-bubble-green">
-              <ClipboardCheck size={21} />
-            </span>
-            <div>
-              <h3 className="font-normal">Daily workflow ready</h3>
-              <p className="mt-1 text-sm text-slate-600">Fast date filtering, clean visit cards, abnormal result flags, and PDF actions are optimized for phone use.</p>
-            </div>
-          </div>
-        </article>
       </section>
     </main>
   );
 }
 
 const colorClasses = [
-  { card: 'color-card-blue', icon: 'icon-bubble-blue', arrow: 'text-blue-300' },
-  { card: 'color-card-green', icon: 'icon-bubble-green', arrow: 'text-sky-300' },
-  { card: 'color-card-red', icon: 'icon-bubble-red', arrow: 'text-cyan-300' },
-  { card: 'color-card-amber', icon: 'icon-bubble-amber', arrow: 'text-indigo-300' }
+  { icon: 'bg-blue-50 text-interpath-blue' },
+  { icon: 'bg-red-50 text-interpath-red' },
+  { icon: 'bg-emerald-50 text-emerald-700' },
+  { icon: 'bg-indigo-50 text-indigo-700' }
 ];
+
+function welcomeName(user) { const first = String(user?.name || user?.username || '').trim().split(/\s+/)[0]; return first ? `Good day, ${first}` : 'Good day'; }
 
 function getCards(role) {
   if (role === 'Patient') {
     return [
       { title: 'My visits', detail: 'Open your lab visits and see result progress.', icon: ClipboardList, to: '/visits' },
-      { title: 'Official PDFs', detail: 'Preview or download generated laboratory reports.', icon: FileArchive, to: '/visits' },
-      { title: 'Covid certificates', detail: 'Request certificates where the SLIS record supports it.', icon: FileCheck, to: '/visits' }
+      { title: 'Official PDFs', detail: 'Preview or download generated laboratory reports.', icon: FileText, to: '/visits' },
+      { title: 'Covid certificates', detail: 'Request certificates where the SLIS record supports it.', icon: LockKeyhole, to: '/visits' },
+      { title: 'Change password', detail: 'Update your protected SLIS sign-in password.', icon: KeyRound, to: '/change-password' }
     ];
   }
   if (role === 'Clinic_Doctor') {
     return [
       { title: 'Patient visits', detail: 'Filter linked clinic visits and open result details.', icon: Search, to: '/visits' },
       { title: 'Secure sharing', detail: 'Share professional WhatsApp PDF links without raw values.', icon: MessageCircle, to: '/visits' },
-      { title: 'Sample pickup', detail: 'Notify the lab when samples are ready for collection.', icon: Truck, to: '/sample-collection' }
+      { title: 'Sample pickup', detail: 'Notify the lab when samples are ready for collection.', icon: Truck, to: '/sample-collection' },
+      { title: 'Change password', detail: 'Update your protected SLIS sign-in password.', icon: KeyRound, to: '/change-password' }
     ];
   }
   return [
     { title: 'Daily SLIS list', detail: 'Pull visits by date across branches and open patient details.', icon: ClipboardList, to: '/visits' },
     { title: 'Result review', detail: 'View grouped test profiles, flags, comments, and credentials.', icon: FileCheck, to: '/visits' },
     { title: 'Operational reports', detail: 'Run summaries for clinics, tests, TAT, and main reports.', icon: FileText, to: '/reports' },
-    { title: 'WhatsApp-ready PDFs', detail: 'Download or share official generated report links.', icon: MessageCircle, to: '/visits' }
+    { title: 'WhatsApp-ready PDFs', detail: 'Download or share official generated report links.', icon: MessageCircle, to: '/visits' },
+    { title: 'Clinic directory', detail: 'Open clinic and doctor contact information.', icon: Building2, to: '/clinics' },
+    { title: 'API tester', detail: 'Run approved SLIS integration checks.', icon: FlaskConical, to: '/api-tester' }
   ];
 }

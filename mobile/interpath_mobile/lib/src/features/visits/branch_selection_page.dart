@@ -49,7 +49,7 @@ class _BranchSelectionPageState extends ConsumerState<BranchSelectionPage> {
             decoration: const InputDecoration(
               labelText: 'Branch or location',
               hintText: 'ALL, HARARE, BULAWAYO…',
-              prefixIcon: Icon(Icons.location_on_outlined),
+              suffixIcon: Icon(Icons.location_on_outlined),
             ),
           ),
           const SizedBox(height: 12),

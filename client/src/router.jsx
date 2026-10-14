@@ -4,7 +4,6 @@ import { AuthLayout } from './layouts/AuthLayout.jsx';
 import { LoginPage } from './auth/LoginPage.jsx';
 import { ForgotPasswordPage } from './auth/ForgotPasswordPage.jsx';
 import { ChangePasswordPage } from './auth/ChangePasswordPage.jsx';
-import { DeviceRegistrationPage } from './devices/DeviceRegistrationPage.jsx';
 import { PatientRegisterPage } from './patients/PatientRegisterPage.jsx';
 import { DashboardPage } from './dashboard/DashboardPage.jsx';
 import { VisitsPage } from './visits/VisitsPage.jsx';
@@ -22,8 +21,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/forgot-password', element: <ForgotPasswordPage /> },
-      { path: '/register', element: <PatientRegisterPage /> },
-      { path: '/device-registration', element: <DeviceRegistrationPage /> }
+      { path: '/register', element: <PatientRegisterPage /> }
     ]
   },
   {

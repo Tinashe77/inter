@@ -64,7 +64,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           initialValue: _userType,
                           decoration: const InputDecoration(
                             labelText: 'Account type',
-                            prefixIcon: Icon(Icons.badge_outlined),
+                            suffixIcon: Icon(Icons.badge_outlined),
                           ),
                           items: const [
                             DropdownMenuItem(
@@ -93,7 +93,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           autofillHints: const [AutofillHints.username],
                           decoration: const InputDecoration(
                             labelText: 'Username',
-                            prefixIcon: Icon(Icons.person_outline_rounded),
+                            suffixIcon: Icon(Icons.person_outline_rounded),
                           ),
                           validator: (value) =>
                               value == null || value.trim().isEmpty
@@ -109,19 +109,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                           onFieldSubmitted: (_) => _submit(),
                           decoration: InputDecoration(
                             labelText: 'Password',
-                            prefixIcon: const Icon(Icons.lock_outline_rounded),
-                            suffixIcon: IconButton(
-                              tooltip: _obscurePassword
-                                  ? 'Show password'
-                                  : 'Hide password',
-                              onPressed: () => setState(
-                                () => _obscurePassword = !_obscurePassword,
-                              ),
-                              icon: Icon(
-                                _obscurePassword
-                                    ? Icons.visibility_outlined
-                                    : Icons.visibility_off_outlined,
-                              ),
+                            suffixIcon: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.lock_outline_rounded),
+                                IconButton(
+                                  tooltip: _obscurePassword
+                                      ? 'Show password'
+                                      : 'Hide password',
+                                  onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword,
+                                  ),
+                                  icon: Icon(
+                                    _obscurePassword
+                                        ? Icons.visibility_outlined
+                                        : Icons.visibility_off_outlined,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           validator: (value) => value == null || value.isEmpty
@@ -169,12 +174,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                                 ? 'Signing in…'
                                 : 'Sign in securely',
                           ),
-                        ),
-                        TextButton(
-                          onPressed: authState.isLoading
-                              ? null
-                              : () => context.go('/device-registration'),
-                          child: const Text('Register this device'),
                         ),
                       ],
                     ),

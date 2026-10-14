@@ -11,11 +11,7 @@
 body {
   margin: 0;
   min-width: 320px;
-  background:
-    radial-gradient(circle at 12% 16%, rgba(59, 130, 246, 0.22), transparent 26%),
-    radial-gradient(circle at 88% 10%, rgba(14, 165, 233, 0.18), transparent 24%),
-    radial-gradient(circle at 82% 78%, rgba(46, 48, 146, 0.14), transparent 28%),
-    linear-gradient(180deg, #f8fbff 0%, #edf5ff 50%, #f5f9ff 100%);
+  background: #f7f8fc;
 }
 
 html {
@@ -30,16 +26,16 @@ textarea {
 }
 
 .field {
-  @apply w-full rounded-lg border border-white/80 bg-white/90 px-4 py-3 text-base font-normal text-slate-700 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-interpath-blue focus:ring-4 focus:ring-interpath-blue/15 sm:text-sm;
+  @apply w-full rounded-2xl border border-blue-100 bg-blue-50/50 px-4 py-3 text-base font-normal text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-interpath-blue focus:ring-4 focus:ring-interpath-blue/10 sm:text-sm;
 }
 
 .btn-primary {
-  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-interpath-blue px-5 py-3 text-sm font-normal text-white shadow-lg shadow-blue-500/25 transition hover:bg-interpath-darkBlue disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-interpath-blue px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/20 transition hover:bg-interpath-darkBlue disabled:cursor-not-allowed disabled:opacity-60;
   background: linear-gradient(135deg, #2E3092, #2563EB 58%, #38BDF8);
 }
 
 .btn-secondary {
-  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-white/80 bg-white/85 px-5 py-3 text-sm font-normal text-slate-700 shadow-sm backdrop-blur transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-60;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-white px-5 py-3 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-60;
 }
 
 .install-chip {
@@ -47,15 +43,43 @@ textarea {
 }
 
 .panel {
-  @apply rounded-lg border border-white/80 bg-white/80 p-4 shadow-xl shadow-blue-950/5 backdrop-blur sm:p-5;
+  @apply rounded-2xl border border-blue-100 bg-white p-4 shadow-sm sm:p-5;
 }
 
 .app-bg {
+  background: #f7f8fc;
+}
+
+.mobile-app-rail {
+  @apply mx-auto w-full max-w-3xl px-3 pb-10 pt-3 sm:px-5 sm:pt-5;
+}
+
+.mobile-appbar {
+  @apply sticky top-0 z-30 border-b border-blue-100 bg-[#F7F8FC]/95 backdrop-blur-xl;
+}
+
+.mobile-tabbar {
+  @apply grid grid-cols-3 border-b border-slate-300 bg-transparent;
+}
+
+.mobile-tabbar button {
+  @apply relative px-2 py-3 text-sm font-medium text-slate-700 transition;
+}
+
+.mobile-tabbar button[aria-selected="true"] {
+  @apply text-interpath-blue;
+}
+
+.mobile-tabbar button[aria-selected="true"]::after {
+  content: "";
+  @apply absolute bottom-[-1px] left-1/4 right-1/4 h-[3px] rounded-full bg-interpath-blue;
+}
+
+.mobile-login-bg {
   background:
-    radial-gradient(circle at 8% 14%, rgba(59, 130, 246, 0.24), transparent 26%),
-    radial-gradient(circle at 92% 12%, rgba(56, 189, 248, 0.2), transparent 24%),
-    radial-gradient(circle at 84% 78%, rgba(46, 48, 146, 0.15), transparent 28%),
-    linear-gradient(180deg, #f9fbff 0%, #eef6ff 48%, #f6faff 100%);
+    radial-gradient(circle at -4% 5%, rgba(37, 99, 235, 0.58), transparent 34%),
+    radial-gradient(circle at 108% 30%, rgba(237, 27, 35, 0.18), transparent 30%),
+    linear-gradient(180deg, #2e3092 0, #2563eb 245px, #f7f8fc 245px, #f7f8fc 100%);
 }
 
 .hero-band {

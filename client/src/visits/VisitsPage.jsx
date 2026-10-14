@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, Clock3, History, Loader2, MapPin, MessageCircle, RefreshCw, RotateCcw, Search, Send, ShieldCheck, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Clock3, History, Loader2, MapPin, MessageCircle, RefreshCw, RotateCcw, Search, Send, ShieldCheck, SlidersHorizontal, X, XCircle } from 'lucide-react';
 import { http } from '../api/http.js';
 import { useAuthStore } from '../auth/authStore.js';
 import { StatusBadge } from '../components/StatusBadge.jsx';
@@ -187,33 +187,30 @@ export function VisitsPage() {
   const showBulkDock = activeTab === 'bulk' && selectedEligible.length > 0 && !sending;
 
   return (
-    <main className={`space-y-3 sm:space-y-4 ${showBulkDock ? 'pb-28 md:pb-24' : ''}`}>
-      <section className="hero-band flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div>
-          <p className="text-sm font-normal text-interpath-blue">{user.usertype === 'Employee' ? 'Laboratory result centre' : 'Laboratory visits'}</p>
-          <h2 className="mt-1 text-2xl font-normal leading-tight sm:text-3xl">{user.usertype === 'Employee' ? 'Results and delivery' : 'Patient visits'}</h2>
-          <p className="mt-2 text-sm font-normal text-slate-600">{user.usertype === 'Employee' ? `Review results and send approved reports for ${employeeBranch || 'ALL'}.` : 'Search visits and open result details.'}</p>
-        </div>
+    <main className={`space-y-4 ${showBulkDock ? 'pb-28 md:pb-24' : ''}`}>
+      {user.usertype === 'Employee' && (
+        <nav className="mobile-tabbar" aria-label="Result sections">
+          {RESULT_TABS.map((tab) => <button type="button" key={tab.id} aria-selected={activeTab === tab.id} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
+        </nav>
+      )}
+
+      {showVisitControls && <section className="panel space-y-3 !p-3">
+        <div className="flex items-center gap-2"><SlidersHorizontal className="text-interpath-blue" size={19} /><strong className="text-sm">Result filters</strong>{user.usertype === 'Employee' && <Link className="ml-auto text-xs font-semibold text-interpath-blue" to="/branch-selection">Change branch</Link>}</div>
         {showVisitControls && user.usertype === 'Employee' && (
-          <div className="grid w-full gap-2 lg:w-auto lg:grid-cols-[180px_220px]">
-            <label className="field flex min-h-11 items-center gap-2 py-2 text-sm"><MapPin size={16} className="text-interpath-blue" /><span className="truncate">{employeeBranch || 'ALL'}</span><Link className="ml-auto text-xs text-interpath-blue" to="/branch-selection">Change</Link></label>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="field flex min-h-12 items-center gap-2 !rounded-xl !px-3 !py-2 text-sm"><MapPin size={16} className="shrink-0 text-interpath-blue" /><span className="min-w-0"><span className="block text-[10px] text-slate-400">Branch</span><span className="block truncate">{employeeBranch || 'ALL'}</span></span></label>
             <input className="field" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} />
           </div>
         )}
         {showVisitControls && user.usertype === 'Clinic_Doctor' && (
           <div className="grid w-full grid-cols-1 gap-2 sm:grid-cols-2 lg:w-auto"><input className="field" type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /><input className="field" type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></div>
         )}
-        {showVisitControls && <button className="btn-primary w-full lg:w-auto" onClick={() => loadVisits()} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} size={16} />{loading ? 'Loading' : 'Refresh'}</button>}
-        {activeTab === 'history' && <button className="btn-primary w-full lg:w-auto" onClick={loadAttempts} disabled={historyLoading}><RefreshCw className={historyLoading ? 'animate-spin' : ''} size={16} />Refresh statuses</button>}
-      </section>
+        <button className="btn-primary w-full" onClick={() => loadVisits()} disabled={loading}><RefreshCw className={loading ? 'animate-spin' : ''} size={16} />{loading ? 'Loading results…' : 'Refresh results'}</button>
+      </section>}
 
-      {user.usertype === 'Employee' && (
-        <nav className="panel grid grid-cols-3 gap-2 p-2" aria-label="Result sections">
-          {RESULT_TABS.map((tab) => <button key={tab.id} className={`rounded-lg px-2 py-3 text-sm transition ${activeTab === tab.id ? 'bg-interpath-blue text-white shadow-lg shadow-blue-500/20' : 'text-slate-600 hover:bg-blue-50'}`} onClick={() => setActiveTab(tab.id)}>{tab.label}</button>)}
-        </nav>
-      )}
+      {activeTab === 'history' && <button className="btn-primary w-full" onClick={loadAttempts} disabled={historyLoading}><RefreshCw className={historyLoading ? 'animate-spin' : ''} size={16} />Refresh statuses</button>}
 
-      {showVisitControls && <div className="panel"><label className="relative block"><Search className="pointer-events-none absolute left-3 top-2.5 text-slate-400" size={18} /><input className="field pl-10" placeholder="Search patient, lab number, test, or clinic" value={query} onChange={(event) => setQuery(event.target.value)} /></label></div>}
+      {showVisitControls && <label className="relative block"><Search className="pointer-events-none absolute right-4 top-3.5 text-interpath-blue" size={18} /><input className="field pr-11" placeholder="Search results" value={query} onChange={(event) => setQuery(event.target.value)} /></label>}
 
       {activeTab === 'bulk' && !loading && (
         <section className="panel space-y-3">
@@ -231,8 +228,10 @@ export function VisitsPage() {
       {!loading && showVisitControls && !error && message && <Notice>{message}</Notice>}
       {!loading && showVisitControls && hasLoaded && visibleVisits.length === 0 && <p className="panel text-sm text-slate-600">{activeTab === 'bulk' ? 'No completed results have one valid doctor number yet.' : 'No visits found.'}</p>}
 
+      {!loading && showVisitControls && visibleVisits.length > 0 && activeTab !== 'bulk' && <div className="flex items-center gap-2"><strong className="text-base">{visibleVisits.length} result{visibleVisits.length === 1 ? '' : 's'}</strong>{(loadingMore || pagination.hasMore) && <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-interpath-blue"><Loader2 className="animate-spin" size={12} />Loading more<span className="h-1.5 w-1.5 rounded-full bg-interpath-red" /></span>}</div>}
+
       {!loading && showVisitControls && (
-        <section className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="space-y-2">
           {visibleVisits.map((visit) => activeTab === 'bulk' ? (
             <BulkVisitCard key={visit.LabNumber} visit={visit} selected={selected.has(visit.LabNumber)} onToggle={() => toggleSelected(visit.LabNumber)} />
           ) : (
@@ -258,7 +257,7 @@ export function VisitsPage() {
 
 function BulkSelectionDock({ count, loadingMore, onReview }) {
   return (
-    <aside className="fixed bottom-24 left-3 right-3 z-40 md:bottom-6 md:left-auto md:right-6 md:w-[440px]" aria-label="Bulk send selection">
+    <aside className="fixed bottom-4 left-3 right-3 z-40 md:left-1/2 md:right-auto md:w-[620px] md:-translate-x-1/2" aria-label="Bulk send selection">
       <div className="flex items-center gap-3 rounded-2xl border border-blue-100 bg-white/95 p-3 shadow-2xl shadow-blue-950/20 backdrop-blur-xl">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 font-semibold text-interpath-blue">{count}</span>
         <div className="min-w-0 flex-1">

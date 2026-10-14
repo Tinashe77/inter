@@ -111,10 +111,12 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                   decoration: InputDecoration(
                     labelText: 'Search results',
                     hintText: 'Patient, lab number, test or clinic',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _search.isEmpty
-                        ? null
-                        : IconButton(
+                    suffixIcon: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.search_rounded),
+                        if (_search.isNotEmpty)
+                          IconButton(
                             tooltip: 'Clear search',
                             onPressed: () {
                               _searchController.clear();
@@ -124,6 +126,8 @@ class _VisitsPageState extends ConsumerState<VisitsPage> {
                             },
                             icon: const Icon(Icons.clear_rounded),
                           ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
